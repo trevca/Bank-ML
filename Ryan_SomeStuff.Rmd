@@ -48,6 +48,8 @@ bank_data=within(bank_data,rm("default"))
 Removing this one here since technically we wouldn't know this before we called them up.
 ```{r}
 bank_data=within(bank_data,rm("duration"))
+bank_data=within(bank_data,rm("nr.employed"))
+bank_data=within(bank_data,rm("emp.var.rate"))
 ```
 
 
@@ -76,18 +78,19 @@ bank_data$marital=impute(bank_data$marital,fun=mode)
 ```
 
 ```{r}
-sam=sample(41188,2000)
+sam=sample(4119,400)
 train=bank_data[-sam,]
 train=ovun.sample(y~.,train,method="over",p=.5)$data
 test=bank_data[sam,]
 rf=randomForest(y ~ ., train)
-pred=as.character(predict(rf,test))
+pred=predict(rf,test)
 pred=ifelse(pred=="yes",1,0)
 test$y=ifelse(test$y=="yes",1,0)
 mean(pred==test$y)
 table(pred,test$y)
 rf[["confusion"]]
 ```
+
 ```{r}
 roc=roc(test$y,pred)
 plot(roc)
@@ -95,7 +98,7 @@ roc$auc
 ```
 
 ```{r}
-eval<-function(shrink){
+eval<-function(shrink,pp){
   sam2=sample(4119-tsize,4119-tsize)
   score=0
   pr=0
@@ -103,9 +106,12 @@ eval<-function(shrink){
     kfold<<-sam2[(((4119-tsize)/5)*i+1):min(((4119-tsize)/5)*(i+1),(4119-tsize))]
     tr<<-train[-kfold,]
     val<<-train[kfold,]
-    tr=ovun.sample(y~.,tr,method="over",p=.5)$data
+    pval<<-pp
+    tr=ovun.sample(y~.,tr,method="over",p = pval)$data
     boost=gbm(y~.,data=tr,distribution="bernoulli",n.trees=1000, shrinkage=shrink)
-    pred=as.numeric(ifelse(predict(boost,val,type="response")>.5,1,0))
+    pred=predict(boost,val,type="response")
+    roc=roc(val$y,pred)$auc
+    pred=as.numeric(ifelse(pred>.5,1,0))
     pr=pr+mean(pred==val$y)/5
     print(length(predict))
     roc=roc(val$y,pred)$auc
@@ -124,10 +130,11 @@ bank_data_copy$y=ifelse(bank_data_copy$y=="yes",1,0)
 sam=sample(4119,tsize)
 test=bank_data_copy[sam,]
 train=bank_data_copy[-sam,]
-x=BayesianOptimization(eval, bounds = list(shrink=c(.0001,.1)), acq = "ucb",n_iter=10,init_points=5)
-train=ovun.sample(y~.,train,method="over",p=.5)$data
-boost=gbm(y~.,data=train,distribution="bernoulli",n.trees=1000, shrinkage=x$Best_Par)
+x=BayesianOptimization(eval, bounds = list(shrink=c(.0001,.1),pp=c(.3,.7)), acq = "ucb",n_iter=10,init_points=5)
+train=ovun.sample(y~.,train,method="over",p=x$Best_Par[2])$data
+boost=gbm(y~.,data=train,distribution="bernoulli",n.trees=1000, shrinkage=x$Best_Par[1])
 summary(boost)
+pred=predict(boost,test,type="response")
 pred=ifelse(predict(boost,test,type="response")>.5,1,0)
 mean(pred==test$y)
 table(pred,test$y)
@@ -135,9 +142,34 @@ table(pred,test$y)
 ```
 
 ```{r}
-roc=roc(test$y,pred)
+roc=roc(test$y,pred,plot=TRUE)
 plot(roc)
 roc$auc
+```
+```{r}
+predict_yes=test[which(pred==1),]
+mean(test$education)
+mean(predict_yes$education)
+mean(test$age)
+mean(predict_yes$age)
+mean(test$marital=="married")
+mean(predict_yes$marital=="married")
+mean(test$loan=="yes")
+mean(predict_yes$loan=="yes")
+mean(test$housing=="yes")
+mean(predict_yes$housing=="yes")
+```
+```{r}
+hist(test$education,breaks=5)
+hist(predict_yes$education,breaks=5)
+hist(test$age,breaks=10)
+hist(predict_yes$age,breaks=10)
+```
+```{r}
+hist(bank_data$euribor3m)#[which(bank_data$nr.employed<5150)])
+hist(bank_data$nr.employed)
+hist(bank_data$emp.var.rate)
+hist(bank_data$emp.var.rate[which(bank_data$euribor3m>3)])
 ```
 
 
