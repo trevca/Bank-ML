@@ -23,7 +23,7 @@ library(rBayesianOptimization)
 
 Read in data with specifications
 ```{r}
-bank_data=read_delim("../../Downloads/bank-additional/bank-additional.csv",";",col_names=TRUE,col_types = "dfffffffffddddfdddddf")#,col_types = "dffccffffcddddfdddddf")
+bank_data=read_delim("bank-additional/bank-additional.csv",";",col_names=TRUE,col_types = "dfffffffffddddfdddddf")#,col_types = "dffccffffcddddfdddddf")
 ```
 
 ```{r}
@@ -175,14 +175,14 @@ hist(bank_data$emp.var.rate[which(bank_data$euribor3m>3)])
 
 #PCA
 ```{r}
-bank_data=read_delim("../../Downloads/bank-additional/bank-additional.csv",";",col_names=TRUE,col_types = "iffccffffcdddifdddddf")
+bank_data=read_delim("bank-additional/bank-additional.csv",";",col_names=TRUE,col_types = "iffccffffcdddifdddddf")
 ```
 
 ```{r}
 #
 #c(2,5,10:14,16:20)
 a=bank_data
-a[,c(1,4,9:13,15:19)]=scale(a[,c(1,4,9:13,15:19)])
+a[c(1,4,9:13,15:19)]=factor(a[c(1,4,9:13,15:19)])
 pca=PCAmix(as.matrix(a[,c(1,4,9:13,15:19)],a[,-c(1,4,9:13,15:19)],rename.level = TRUE))
 ```
 
