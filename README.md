@@ -1,4 +1,4 @@
 # Bank Project
-## Authors: Trevor Carpenter, Ryan Buchner, Bobby 
+## Authors: Trevor Carpenter, Ryan Buchner, Bobby Chow
 
 
