@@ -1,0 +1,46 @@
+---
+title: "STA141_Project"
+author: "Trevor Carpenter, Ryan Buchner, Bobby Chow"
+date: "12/1/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+bank_data = read_delim("bank-additional/bank-additional.csv", ";", col_names=TRUE, col_types = "dfffffffffddddfdddddf")
+```
+
+First we process the data. Education has a logical order to it so we can convert it to a numeric. This works for trees, but not necessarily for neural networks or logistic since the distances between the levels which we made all equal to 1 are arbitrary.
+```{r}
+## process data for education
+bank_data$education = as.numeric(ifelse(bank_data$education == "illiterate", 0, ifelse(bank_data$education == "basic.4y", 1, ifelse(bank_data$education == "basic.6y", 2, ifelse(bank_data$education == "basic.9y", 3, ifelse(bank_data$education == "high.school", 4, ifelse(bank_data$education == "university.degree", 5, ifelse(bank_data$education == "professional.course", 0, NA))))))))
+
+## omit na values
+bank_data = na.exclude(bank_data)
+```
+Excluding rows with NA omits 167 rows.
+
+# 1. How do the prediction variables interact to predict whether or not a client will sign on to a long-term deposit?
+
+```{r}
+sam = sample(3952,400)
+train = bank_data[-sam,]
+train = ovun.sample(y~., train,method="over", p=.5)$data
+test = bank_data[sam,]
+rf = randomForest(y ~ ., train)
+pred = predict(rf, test)
+pred = ifelse(pred == "yes", 1, 0)
+test$y = ifelse(test$y=="yes", 1, 0)
+mean(pred == test$y)
+table(pred, test$y)
+rf[["confusion"]]
+```
+
+
+
+
+
+
