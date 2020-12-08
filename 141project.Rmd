@@ -50,7 +50,6 @@ bank_data=within(bank_data,rm("nr.employed"))
 bank_data=within(bank_data,rm("emp.var.rate"))
 ```
 
-
 ```{r}
 bank_data$day_of_week=ifelse(bank_data$day_of_week=="mon",0,ifelse(bank_data$day_of_week=="tue",1,ifelse(bank_data$day_of_week=="wed",2,ifelse(bank_data$day_of_week=="thu",3,ifelse(bank_data$day_of_week== "fri",4,NA)))))
 bank_data$day_of_week=as.numeric(bank_data$day_of_week)
