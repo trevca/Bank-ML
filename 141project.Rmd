@@ -1,0 +1,183 @@
+---
+title: "141project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(randomForest)
+library(missForest)
+library(PCAmixdata)
+library(gbm)
+library(pROC)
+library(ROSE)
+library(Hmisc)
+library(rBayesianOptimization)
+```
+
+Read in data with specifications
+```{r}
+bank_data=read_delim("bank-additional.csv",";",col_names=TRUE,col_types = "dfffffffffddddfdddddf")
+bank_full=read_delim("bank-full.csv",";",col_names=TRUE,col_types = "dffffdfffdfddddff")
+#bank_red=read_delim("bank.csv",";",col_names=TRUE,col_types = "dffffdfffdfddddff")
+```
+
+```{r}
+quantile(bank_data$age)
+```
+
+Education has a logical order to it so we can convert it to a numeric.This works for trees, but not necessarily for neural networks or logistic since the distances between the levels which we made all equal to 1 are arbitrary.
+```{r}
+bank_data$education=ifelse(bank_data$education=="illiterate",0,ifelse(bank_data$education=="basic.4y",1,ifelse(bank_data$education== "basic.6y",2,ifelse(bank_data$education== "basic.9y",3,ifelse(bank_data$education== "high.school",4,ifelse(bank_data$education== "university.degree",5,ifelse(bank_data$education== "professional.course",0,NA)))))))
+bank_data$education=as.numeric(bank_data$education)
+mean=mean(bank_data$education,na.rm=TRUE) 
+bank_data$education[which(is.na(bank_data$education))]=mean#mean imputation
+```
+
+Default has one occurence of "yes" so it won't be a good predictor. If ever used, will cause overfitting of "yes" individuals. Might want to reconsider once looking at fill data set since that might have more "yes" occurences to the point where we can reasonably include it.
+```{r}
+unique(bank_data$default)
+which(bank_data$default=="yes")
+bank_data=within(bank_data,rm("default"))
+```
+
+Removing this one here since technically we wouldn't know this before we called them up.
+```{r}
+bank_data=within(bank_data,rm("duration"))
+bank_data=within(bank_data,rm("nr.employed"))
+bank_data=within(bank_data,rm("emp.var.rate"))
+```
+
+
+```{r}
+bank_data$day_of_week=ifelse(bank_data$day_of_week=="mon",0,ifelse(bank_data$day_of_week=="tue",1,ifelse(bank_data$day_of_week=="wed",2,ifelse(bank_data$day_of_week=="thu",3,ifelse(bank_data$day_of_week== "fri",4,NA)))))
+bank_data$day_of_week=as.numeric(bank_data$day_of_week)
+bank_data$day_of_week=as.numeric(bank_data$day_of_week)
+mean=mean(bank_data$day_of_week,na.rm=TRUE)
+bank_data$day_of_week[which(is.na(bank_data$day_of_week))]=mean#mean imputation
+```
+
+```{r}
+bank_data[bank_data=="unknown"]=NA
+```
+
+```{r}
+bank_data=mutate(bank_data, season=ifelse(month=="may" | month=="jun" | month=="jul" | month =="aug", "summer", ifelse(month=="nov" | month=="dec" | month=="jan" | month =="feb", "winter", ifelse(month=="sept" | month=="oct", "fall", "spring"))))
+bank_data$season=as.factor(bank_data$season)
+```
+
+```{r}
+bank_data$housing=impute(bank_data$housing,fun=mode)
+bank_data$loan=impute(bank_data$loan,fun=mode)
+bank_data$job=impute(bank_data$job,fun=mode)
+bank_data$marital=impute(bank_data$marital,fun=mode)
+```
+
+```{r}
+sam=sample(4119,400)
+train=bank_data[-sam,]
+train=ovun.sample(y~.,train,method="over",p=.5)$data
+test=bank_data[sam,]
+rf=randomForest(y ~ ., train)
+pred=predict(rf,test)
+pred=ifelse(pred=="yes",1,0)
+test$y=ifelse(test$y=="yes",1,0)
+mean(pred==test$y)
+table(pred,test$y)
+rf[["confusion"]]
+```
+
+```{r}
+roc=roc(test$y,pred)
+plot(roc)
+roc$auc
+```
+
+```{r}
+eval<-function(shrink,pp){
+  sam2=sample(4119-tsize,4119-tsize)
+  score=0
+  pr=0
+  for (i in 0:4){
+    kfold<<-sam2[(((4119-tsize)/5)*i+1):min(((4119-tsize)/5)*(i+1),(4119-tsize))]
+    tr<<-train[-kfold,]
+    val<<-train[kfold,]
+    pval<<-pp
+    tr=ovun.sample(y~.,tr,method="over",p = pval)$data
+    boost=gbm(y~.,data=tr,distribution="bernoulli",n.trees=1000, shrinkage=shrink)
+    pred=predict(boost,val,type="response")
+    roc=roc(val$y,pred)$auc
+    pred=as.numeric(ifelse(pred>.5,1,0))
+    pr=pr+mean(pred==val$y)/5
+    print(length(predict))
+    roc=roc(val$y,pred)$auc
+    score=score+roc/5
+  }
+  return(list(Score=score,Pred=pr))
+}
+```
+
+
+
+Education converted to numeric.
+```{r}
+bank_full$education=ifelse(bank_full$education=="primary",1,ifelse(bank_full$education=="secondary",2,ifelse(bank_full$education== "tertiary",3,NA)))
+bank_full$education=as.numeric(bank_full$education)
+mean=mean(bank_full$education,na.rm=TRUE) 
+bank_full$education[which(is.na(bank_full$education))]=mean#mean imputation
+```
+
+Default has 816 occurrences of "yes" in the not-additional data, less than 2 percent of the total observations. It does not seem reasonable to include "default" as a predictor.
+```{r}
+unique(bank_full$default)
+#which(bank_full$default=="yes") #intensive
+bank_full=within(bank_full,rm("default")) 
+```
+
+```{r}
+bank_full=within(bank_full,rm("duration"))
+```
+
+```{r}
+mean=mean(bank_full$day,na.rm=TRUE)
+bank_full$day[which(is.na(bank_full$day))]=mean#mean imputation
+```
+
+```{r}
+bank_full[bank_full=="unknown"]=NA
+```
+
+```{r}
+bank_full=mutate(bank_full, season=ifelse(month=="may" | month=="jun" | month=="jul" | month =="aug", "summer", ifelse(month=="nov" | month=="dec" | month=="jan" | month =="feb", "winter", ifelse(month=="sept" | month=="oct", "fall", "spring"))))
+bank_full$season=as.factor(bank_full$season)
+```
+
+```{r}
+bank_full$housing=impute(bank_full$housing,fun=mode)
+bank_full$loan=impute(bank_full$loan,fun=mode)
+bank_full$job=impute(bank_full$job,fun=mode)
+bank_full$marital=impute(bank_full$marital,fun=mode)
+```
+
+```{r}
+sam=sample(45211,11303) # 75% of the entire dataset for training 25% for testing
+train=bank_full[-sam,]
+train=ovun.sample(y~.,train,method="over",p=.5)$data
+test=bank_full[sam,]
+rf=randomForest(y ~ ., train)
+pred=predict(rf,test)
+pred=ifelse(pred=="yes",1,0)
+test$y=ifelse(test$y=="yes",1,0)
+mean(pred==test$y)
+table(pred,test$y)
+rf[["confusion"]]
+```
+```{r}
+roc=roc(test$y,pred)
+plot(roc)
+roc$auc
+```
