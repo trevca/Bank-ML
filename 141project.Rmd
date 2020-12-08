@@ -22,8 +22,6 @@ library(rBayesianOptimization)
 Read in data with specifications
 ```{r}
 bank_data=read_delim("bank-additional.csv",";",col_names=TRUE,col_types = "dfffffffffddddfdddddf")
-bank_full=read_delim("bank-full.csv",";",col_names=TRUE,col_types = "dffffdfffdfddddff")
-#bank_red=read_delim("bank.csv",";",col_names=TRUE,col_types = "dffffdfffdfddddff")
 ```
 
 ```{r}
@@ -97,33 +95,15 @@ plot(roc)
 roc$auc
 ```
 
+2. Is the updated data necessary to improve that predictor, meaning can we be just as accurate with the not-additional dataset?
+
+Read in non-additional dataset.
 ```{r}
-eval<-function(shrink,pp){
-  sam2=sample(4119-tsize,4119-tsize)
-  score=0
-  pr=0
-  for (i in 0:4){
-    kfold<<-sam2[(((4119-tsize)/5)*i+1):min(((4119-tsize)/5)*(i+1),(4119-tsize))]
-    tr<<-train[-kfold,]
-    val<<-train[kfold,]
-    pval<<-pp
-    tr=ovun.sample(y~.,tr,method="over",p = pval)$data
-    boost=gbm(y~.,data=tr,distribution="bernoulli",n.trees=1000, shrinkage=shrink)
-    pred=predict(boost,val,type="response")
-    roc=roc(val$y,pred)$auc
-    pred=as.numeric(ifelse(pred>.5,1,0))
-    pr=pr+mean(pred==val$y)/5
-    print(length(predict))
-    roc=roc(val$y,pred)$auc
-    score=score+roc/5
-  }
-  return(list(Score=score,Pred=pr))
-}
+bank_full=read_delim("bank-full.csv",";",col_names=TRUE,col_types = "dffffdfffdfddddff")
+#bank_red=read_delim("bank.csv",";",col_names=TRUE,col_types = "dffffdfffdfddddff")
 ```
 
-
-
-Education converted to numeric.
+Education has a logical order so we can convert it to numeric.
 ```{r}
 bank_full$education=ifelse(bank_full$education=="primary",1,ifelse(bank_full$education=="secondary",2,ifelse(bank_full$education== "tertiary",3,NA)))
 bank_full$education=as.numeric(bank_full$education)
