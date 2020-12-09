@@ -27,8 +27,7 @@ library(gridExtra)
 
 Read in data with specifications
 ```{r}
-bank_data=read_delim("../../Downloads/bank-additional/bank-additional.csv",";",col_names=TRUE,col_types = "dfffffffcfddddfdddddf")#,col_types = "dffccffffcddddfdddddf")
-#bank_data=read_delim("bank-additional/bank-additional.csv",";",col_names=TRUE,col_types = "dfffffffffddddfdddddf")#,col_types = "dffccffffcddddfdddddf")
+bank_data=read_delim("bank-additional/bank-additional-full.csv",";",col_names=TRUE,col_types = "dfffffffcfddddfdddddf")#,col_types = "dffccffffcddddfdddddf")
 ```
 
 Change the response variable to numeric.
@@ -54,27 +53,27 @@ mean=mean(bank_data$education,na.rm=TRUE)
 bank_data$education[which(is.na(bank_data$education))]=mean
 ```
 
-Mode impute the Job
+Leave "unknown" as job category.
 ```{r}
-bank_data$job=impute(bank_data$job,fun=mode)
+ggplot(bank_data,aes(job))+geom_bar()
+length(which(is.na(bank_data$job)))
+bank_data$housing[which(is.na(bank_data$housing))]="unknown"
 ```
 
 Appears to be a correlation between job and education, doesn't appear strong enough to justify removing one. And as we will see, neither end up as super important variables anyways.
 ```{r}
 names=c()
 means=c()
-for (i in 1:11){
+for (i in 1:12){
   job=as.character(unique(bank_data$job)[i])
   names=c(names,job)
   means=c(means,mean(bank_data[which(bank_data$job==job),]$education))
 }
 boxplot(means~names,data=data.frame(names=names,means=means),las=2,xlab="")
 rm(job)
-rm(unemployed)
 rm(names)
 rm(means)
 rm(i)
-rm(mean)
 ```
 
 Default has one occurence of "yes" so it won't be a good predictor. If ever used, will cause overfitting of "yes" individuals. Might want to reconsider once looking at fill data set since that might have more "yes" occurences to the point where we can reasonably include it.
@@ -84,7 +83,7 @@ length(which(bank_data$default=="yes"))
 bank_data=within(bank_data,rm("default"))
 ```
 
-Analyze the 
+Analyze the economic variables
 ```{r}
 econ=data.frame(emp=bank_data$nr.employed,evr=bank_data$emp.var.rate,eur=bank_data$euribor3m,pri=bank_data$cons.price.idx ,conf=bank_data$cons.conf.idx)
 cor(econ)
@@ -165,15 +164,15 @@ bank_data$previous[which(bank_data$previous>=3)]=3
 
 Set up for boosting, split into train/test sets
 ```{r}
-tsize=400
-sam=sample(4119,tsize)
+n=nrow(bank_data)
+tsize=1000
+sam=sample(n,tsize)
 test=bank_data[sam,]
 train=bank_data[-sam,]
 ```
 
 Look at age distribution, may want to remove outliers since they may lead to overfitting for those points in the test set. However, through cross validation we realized that removing these data points hurts the models efficiency.
 ```{r}
-hist(train$age)
 quantile(train$age)
 ggplot(bank_data,aes(age,fill=as.factor(y)))+geom_histogram()
 ```
@@ -183,11 +182,11 @@ ggplot(bank_data,aes(age,fill=as.factor(y)))+geom_histogram()
 This evaluation function implement cross validation manually.
 ```{r}
 eval<-function(shrink){
-  sam2=sample(4119-tsize,4119-tsize)
+  sam2=sample(n-tsize,n-tsize)
   score=0
   pr=0
   for (i in 0:4){
-    kfold<<-sam2[(((4119-tsize)/5)*i+1):min(((4119-tsize)/5)*(i+1),(4119-tsize))]
+    kfold<<-sam2[(((n-tsize)/5)*i+1):min(((n-tsize)/5)*(i+1),(n-tsize))]
     tr<<-train[-kfold,]
     val<<-train[kfold,]
     tr=ovun.sample(y~.,tr,method="over",p = .5)$data
@@ -300,7 +299,7 @@ shrink=10^x_new[which.max(mu)]
 Oversample training set, and perform boosting. Then evaluate via AUC, accuracy, and table.
 ```{r}
 train=ovun.sample(y~.,train,method="over",p=.5)$data
-boost=gbm(y~.,data=train,distribution="bernoulli",n.trees=1000, shrinkage=.05)
+boost=gbm(y~.,data=train,distribution="bernoulli",n.trees=1000, shrinkage=shrink)
 summary(boost)
 pred=predict(boost,test,type="response")
 roc=roc(test$y,pred,plot=TRUE)
