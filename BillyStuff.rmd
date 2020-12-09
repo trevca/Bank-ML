@@ -1,3 +1,23 @@
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(randomForest)
+library(missForest)
+library(PCAmixdata)
+library(gbm)
+library(pROC)
+library(ROSE)
+library(Hmisc)
+library(rBayesianOptimization)
+library(plotly)
+library(GPfit)
+library(lintools)
+library(gridExtra)
+```
+
 2. Is the updated data necessary to improve that predictor, meaning can we be just as accurate with the not-additional dataset?
 
 Read in non-additional dataset.
