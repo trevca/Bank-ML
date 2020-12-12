@@ -18,26 +18,36 @@ library(gbm)
 library(pROC)
 library(ROSE)
 library(Hmisc)
-library(rBayesianOptimization)
-library(plotly)
 library(GPfit)
 library(lintools)
 library(gridExtra)
 ```
+For Reproducability
+```{r}
+set.seed(1)
+```
+
+# Background  
+  
+  A Portuguese banking institution has provided data related to a direct marketing campaign conducted through phone calls. Through the campaign, the institution collected information about the attributes of the contacted clients such as job type, marital status, and education level. The objective of the campaign was to use the collected data to assess whether or not a client would subscribe to a bank term deposit with the banking institution. The collected data consists of two categories of information, information related to the client and information related to the clients interactions with the marketing campaign. Information related to the client refers to attributes specific to the particular client, such as their age, job, or loan status. Information related to the clients interactions with the campaign refers to information such as the last date of contact with the campaign, method of contact, and the outcome of contact with previous marketing campaigns.
+
+# Statistical Questions of Interest
+
+Our main question of interest is how the prediction variables interact to predict whether or not a client will sign on to a long-term deposit. This entails building a predictive model to make educated guesses about if a particular individual will sign up for the loan. However, given that the data consists of both information about the person, we would like to see how the profile of an “average” person who signs up changes in different economic scenarios.
+
+On top of that, we are also curious to see how much predictive power the extra data provides. That is, we would like to see how good of a model we can create without that extra data.
+
+Finally, the dataset contains lots of missing data; we would like to see how the different ways we can handle these missing data points affects the accuracy of our model.
+
+#Data Analysis  
+One key thing to note about our dataset is that along with the response variable “y,” there is also the “duration of call” variable which we would not know before we called the individual. Thus, assuming this model is going to be used to select who to call, we are choosing to remove this. This will very much hurt our model’s power, but from the perspective of the bank it is necessary to do.
+
+Given our data set is overpopulated by people who didn’t sign up for the program, using a metric of proportion correctly classified doesn’t make sense, since a model that predicts “no” for every individual will perform very well, resulting in the models we build being skewed to predicting “no”. The bank is presumably most interested in identifying the people who sign up, so we need a better metric for evaluating our model. Thus, we will use a receiver operating characteristic (ROC) curve, which plots the specificity of the model against the sensitivity. The area under the  ROC curve (AUC) provides a metric of how well the model can pick up on True-positives while not substantially increasing the number of false positives. One technique we can use to help us increase the model’s predictive power is to undersample. This will remove some of the “no” samples from our training set; in effect this increase the weighting of the "yes" samples, thus effectively increasing the penalty for misclassifying them. Doing so will increase the AUC of the model, since the model will now be more willing to report false positives in exchange for less false negatives.
+
 
 Read in data with specifications
 ```{r}
-bank_data=read_delim("bank-additional/bank-additional-full.csv",";",col_names=TRUE,col_types = "dfffffffcfddddfdddddf")#,col_types = "dffccffffcddddfdddddf")
-```
-
-Change the response variable to numeric.
-```{r}
-bank_data$y=ifelse(bank_data$y=="yes",1,0)
-```
-
-Removing call duration since technically we wouldn't know this before we called them up.
-```{r}
-bank_data=within(bank_data,rm("duration"))
+bank_data=read_delim("bank-additional/bank-additional-full.csv",";",col_names=TRUE,col_types = "dfffffffcfddddfdddddf")
 ```
 
 Replace unknowns with NA
@@ -45,7 +55,20 @@ Replace unknowns with NA
 bank_data[bank_data=="unknown"]=NA
 ```
 
-Education has a logical order to it so we can convert it to a numeric. This works for trees, but not necessarily for neural networks or regression since the distances between the levels which we made all equal to 1 are arbitrary.
+Change the response variable to numeric.
+```{r}
+bank_data$y=ifelse(bank_data$y=="yes",1,0)
+```
+
+
+##### Duration of Call 
+Removing "call duration" since technically we wouldn't know this before we called them up. However, this variable is a very strong predictor of sucess so removing it will hurt our model.
+```{r}
+bank_data=within(bank_data,rm("duration"))
+```
+
+##### Education Level  
+Education has a logical order to it so we can convert it to a numeric. This works for trees, but not necessarily for neural networks or regression since the distances between the levels which we made all equal to 1 are arbitrary. We will mean impute for the missing values, assuming that they are average in terms of education. This is an assumption we are making and could be false (e.g. unknown educaton people might actually be less educated on average)
 ```{r}
 bank_data$education=ifelse(bank_data$education=="illiterate",0,ifelse(bank_data$education=="basic.4y",1,ifelse(bank_data$education== "basic.6y",2,ifelse(bank_data$education== "basic.9y",3,ifelse(bank_data$education== "high.school",4,ifelse(bank_data$education== "university.degree",5,ifelse(bank_data$education== "professional.course",0,NA)))))))
 bank_data$education=as.numeric(bank_data$education)
@@ -53,14 +76,15 @@ mean=mean(bank_data$education,na.rm=TRUE)
 bank_data$education[which(is.na(bank_data$education))]=mean
 ```
 
-Leave "unknown" as job category.
+##### Job of Client 
+Leave "unknown" as job category. It is a large enough group on its own and we would lose information by imputing.
 ```{r}
 ggplot(bank_data,aes(job))+geom_bar()
 length(which(is.na(bank_data$job)))
 bank_data$housing[which(is.na(bank_data$housing))]="unknown"
 ```
 
-Appears to be a correlation between job and education, doesn't appear strong enough to justify removing one. And as we will see, neither end up as super important variables anyways.
+Appears to be a correlation between job and education, doesn't appear strong enough to justify removing one. And as we will see from our model, neither end up as super important variables anyways.
 ```{r}
 names=c()
 means=c()
@@ -76,32 +100,38 @@ rm(means)
 rm(i)
 ```
 
-Default has one occurence of "yes" so it won't be a good predictor. If ever used, will cause overfitting of "yes" individuals. Might want to reconsider once looking at fill data set since that might have more "yes" occurences to the point where we can reasonably include it.
+
+##### Has Credit in Default?
+Default has only 3 occurences of "yes" so it won't be a good predictor. If ever used, it could cause overfitting of "yes" individuals. Might want to reconsider once looking at fill data set since that might have more "yes" occurences to the point where we can reasonably include it.
 ```{r}
 unique(bank_data$default)
 length(which(bank_data$default=="yes"))
 bank_data=within(bank_data,rm("default"))
 ```
 
-Analyze the economic variables
+
+##### Economic Factors  
+Analyze the economic variables. "nr.employed" is number of people employed, "emp.var.rate" is a measure of economic volatability, "euribor3m" is a measure of interest rates, "cons.price.idx" (consumer price index) is a measure of the change in prices for consumer goods and services, and "cons.conf.idx" (consumer confidence index) measures optimism about the economy.
 ```{r}
 econ=data.frame(emp=bank_data$nr.employed,evr=bank_data$emp.var.rate,eur=bank_data$euribor3m,pri=bank_data$cons.price.idx ,conf=bank_data$cons.conf.idx)
-cor(econ)
+heatmap(cor(econ),scale="none")
 rm(econ)
 ```
 
-Too much correlation between the nr.employed, emp.var.rate, and euribor3m, so we will remove two of them. Since they all provide essentially the same information, removing them will force the model to make predictions off other variables as well.
+There is too much correlation between the nr.employed, emp.var.rate, and euribor3m, so we will remove two of them. Since they all provide essentially the same information, removing them will force the model to make predictions off other variables as well instead of relying on these variable exclusively.
 ```{r}
 bank_data=within(bank_data,rm("nr.employed"))
 bank_data=within(bank_data,rm("emp.var.rate"))
 ```
 
-Even though p-outcome is dominated by "non-existent," it seems that there are enough of yes/no in each of the categories to avoid overfitting.
+##### Outcome of Previous Contact  
+Even though p-outcome is dominated by "non-existent," it seems that there are enough of yes/no in each of the categories to avoid overfitting. Thus, we can avoid making any changes.
 ```{r}
 ggplot(bank_data,aes(x=poutcome,fill=as.factor(y)))+geom_bar()
 ```
 
-There is some order to day of the week, so we changed it to a numeric variable, and then mean imputed to fill in missing data. However, we tested using this as a categorical variable as well and it appeared to make no difference.
+##### Day of the Week  
+There is some order to day of the week, so we changed it to a numeric variable, and then mean imputed to fill in missing data. However, we tested using this as a categorical variable as well and it appeared to make no difference, most likely because it is not a strong predictor.
 ```{r}
 bank_data$day_of_week=ifelse(bank_data$day_of_week=="mon",0,ifelse(bank_data$day_of_week=="tue",1,ifelse(bank_data$day_of_week=="wed",2,ifelse(bank_data$day_of_week=="thu",3,ifelse(bank_data$day_of_week== "fri",4,NA)))))
 bank_data$day_of_week=as.numeric(bank_data$day_of_week)
@@ -110,74 +140,95 @@ mean=mean(bank_data$day_of_week,na.rm=TRUE)
 bank_data$day_of_week[which(is.na(bank_data$day_of_week))]=mean#mean imputation
 ```
 
+##### Has Housing Loan  
 Housing is equally distributed between yes and no. No clear way to proceed with the missing values here through mode imputation, so it seems the best option will be to leave unknown as its own category.
 ```{r}
 ggplot(bank_data,aes(x=housing,fill=as.factor(y)))+geom_bar()
 bank_data$housing[which(is.na(bank_data$housing))]="unknown"
 ```
 
-Will be best to leave unknown as its own category here. Enoguh data points where we can justify leaving it as its own category.
+Will be best to leave unknown as its own category for "loan". Enough data points where we can justify leaving it as its own category.
 ```{r}
 ggplot(bank_data,aes(x=loan,fill=as.factor(y)))+geom_bar()
 bank_data$loan[which(is.na(bank_data$loan))]="unknown"
 length(which(bank_data$loan=="unknown"))
 ```
 
-Good distribution of data, but very few unknowns to the point where leaving them as their own category could cause overfitting. Instead we propose mode imputation.
+##### Martital Status  
+Good distribution of data for the marital category, but very few "unknowns" to the point where leaving them as their own category could cause overfitting. Instead we propose mode imputation.
 ```{r}
 ggplot(bank_data,aes(x=marital,fill=as.factor(y)))+geom_bar()
 length(which(is.na(bank_data$marital)))
 bank_data$marital=impute(bank_data$marital,fun=mode)
 ```
 
-To avoid overfitting, we will make this categorical with 2 categories,<999 and >=999. This is because there are two strong groups but if we look at the individual counts of the data, it makes more sense to This does have a strong correaltion with poutcome though so removal is a possibility.
+##### Number of Days since last contacted  
+To avoid overfitting, we will make this categorical with 2 categories,<999 and >=999. This is because there are two strong groups, but if we look at the individual counts of the data, the different values at the lower end of the spectrum all have low individual frequency. This does have a strong correaltion with poutcome though, so we will choose to remove poutcome.
 ```{r}
 ggplot(bank_data,aes(x=pdays,fill=as.factor(y)))+geom_histogram()
 ggplot(bank_data[which(bank_data$pdays<900),],aes(x=pdays,fill=as.factor(y)))+geom_histogram()
 bank_data$pdays=as.factor(ifelse(bank_data$pdays<999,"recent","long_ago"))
 ggplot(bank_data,aes(x=pdays,fill=as.factor(y)))+geom_bar()
 ggplot(bank_data,aes(x=pdays,fill=poutcome))+geom_bar()
+bank_data=within(bank_data,rm("poutcome"))
 ```
 
+##### Method of Contact  
 Nothing we expect to be correlated with contact, so no filtering to do here.
 ```{r}
 ggplot(bank_data,aes(x=contact,fill=as.factor(y)))+geom_bar()
 ```
 
-Month data seems alright, except some of the months lack data points, which could lead to overfitting. As a result, we will assign all december cases to a joint Nov/Dec variable. Similarily, we with add March and April together, and September and October.
+##### Month  
+Month data seems alright, except some of the months lack data points, which could lead to overfitting. As a result, we will assign all december cases to a joint Nov/Dec variable.
 ```{r}
 ggplot(bank_data,aes(x=month,fill=as.factor(y)))+geom_bar()
 length(which(bank_data$month=="dec" & bank_data$y==0))
 bank_data$month[which(bank_data$month=="nov" | bank_data$month=="dec")]="nov/dev"
-bank_data$month[which(bank_data$month=="sept" | bank_data$month=="oct")]="sept/oct"
-bank_data$month[which(bank_data$month=="mar" | bank_data$month=="apr")]="mar/apr"
+#bank_data$month[which(bank_data$month=="sept" | bank_data$month=="oct")]="sept/oct"
+#bank_data$month[which(bank_data$month=="mar" | bank_data$month=="apr")]="mar/apr"
 ggplot(bank_data,aes(x=month,fill=as.factor(y)))+geom_bar()
 bank_data$month=as.factor(bank_data$month)
 ```
 
-Not enough 3's, 4's, 5's, and 6's. Will merge those 4 together to create a more robust model.
+##### Number of Previous Contacts  
+Not enough 5's, and 6's. Will merge those 2 together to create a more robust model.
 ```{r}
 ggplot(bank_data,aes(x=previous,fill=as.factor(y)))+geom_bar()
-length(which(bank_data$previous>=3))
-bank_data$previous[which(bank_data$previous>=3)]=3
+length(which(bank_data$previous>=5))
+bank_data$previous[which(bank_data$previous>=5)]=5
 ```
+
+##### Client Age
+Look at age distribution, may want to remove outliers since they may lead to overfitting for those points in the test set. However, through cross validation we realized that removing these data points hurts the models efficiency.
+```{r}
+quantile(bank_data$age)
+ggplot(bank_data,aes(age,fill=as.factor(y)))+geom_histogram()
+```
+
+# Literature review  
+  Gradient boosting machines were first introduced in 1999 as a method of greedy function approximation; despite our usage for our project, the theory can be applied to other functional approximations methods besides trees. The methodology involves first fitting a simple function to the data, and then proceeding to successively fit models to the residual of the previous function, and additively combining the previous function with the new one. More recently, improvements have been made to the base theory, but those improvements, such as xgboost, center around the speed of calculation, in particular allowing the training to occur in parallel.  
+  
+  Hyperparameter tuning has been known to be an important part of creating effective machine learning models for decades. Initially, hyperparameter tuning was done by hand, but more recently work has been done to automate the process. Bayesian optimization is by no means a new development, but its widespread adoption by the machine learning community did not occur until the past decade. In a 2012 paper, Snoek, Larochelle, and Adams, describe a process for Bayesian optimization in Machine Learning and tout its ability to create better predictive models. The process is a way to fit a function to the models “score” (which can be defined based on the situation) over the different hyperparameters; it is an iterative process which involves fitting a functions for both the mean and variance of the function, and then choosing a new point to sample based on the means and variances of the different regions. 
+
+# Extra Credit Methods  
+  In our model, since we chose to use boosting, we introduce a hyperparameter, the shrinkage of the boosting model. While exhaustive search methods (random search, graph search) perform adequately well, we chose to use Bayesian Optimization to find an ideal combination of hyperparameters. This method gives a statistical backing to our search, and offers better performance than the exhaustive methods in cases such as ours where there is a non-negligible cost of sampling from the distribution. Sampling for us involves training a boosted tree on the data for each of the k-fold cross validation sets and evaluating the average performance on the held out data points. This takes a significant amount of time. Instead of choosing points randomly, Bayesian Optimization works by first creating a Gaussian posterior function for the mean and covariance over the points of interest. That is, for the range specified, we will estimate the mu for all of the points as well as its  From this, we then select a new point to sample by looking for a point with high expected performance from a region that has high uncertainty (variance). This can be described as balancing the exploration- looking at areas with high variance, “unknown areas”- and exploitation- sampling from high performing areas to better find the absolute peak. While there are several different methods for selecting the new point, we chose to use “Expected Improvement” metric.
+
+  In the demonstration below, we plotted the posterior distribution for the mu side by side with the Expected Improvement function. For each iteration, we then sample the point specified by the maximum of Expected Improvement. We then re-calculate the posterior as well as the EI. This new pot is plotted below the original plots. We continue this for 10 interactions. Initially, we chose 5 points equally spaced out. Notice how the algorithm switches over from exploration- sampling points with high variance- to exploitation- sampling from points close to the maximum.
+
+  All of the code for the Bayesian Optimization was written by our team using only base R functions which took a significant amount of time. As a result we believe that we should be eligible to earn 15 extra credit points for this.
+
+# Our Model
 
 Set up for boosting, split into train/test sets
 ```{r}
 n=nrow(bank_data)
-tsize=1000
+ntree=2500 #Number of Trees
+tsize=7500 #size of test set
 sam=sample(n,tsize)
 test=bank_data[sam,]
 train=bank_data[-sam,]
 ```
-
-Look at age distribution, may want to remove outliers since they may lead to overfitting for those points in the test set. However, through cross validation we realized that removing these data points hurts the models efficiency.
-```{r}
-quantile(train$age)
-ggplot(bank_data,aes(age,fill=as.factor(y)))+geom_histogram()
-```
-
-#Boosting
 
 This evaluation function implement cross validation manually.
 ```{r}
@@ -189,13 +240,12 @@ eval<-function(shrink){
     kfold<<-sam2[(((n-tsize)/5)*i+1):min(((n-tsize)/5)*(i+1),(n-tsize))]
     tr<<-train[-kfold,]
     val<<-train[kfold,]
-    tr=ovun.sample(y~.,tr,method="over",p = .5)$data
-    boost=gbm(y~.,data=tr,distribution="bernoulli",n.trees=1000, shrinkage=shrink)
+    tr=ovun.sample(y~.,tr,method="under",p = .5)$data
+    boost=gbm(y~.,data=tr,distribution="bernoulli",n.trees=ntree, shrinkage=shrink)
     pred=predict(boost,val,type="response")
     roc=roc(val$y,pred)$auc
     pred=as.numeric(ifelse(pred>.5,1,0))
     pr=pr+mean(pred==val$y)/5
-    print(length(predict))
     roc=roc(val$y,pred)$auc
     score=score+roc/5
   }
@@ -218,13 +268,11 @@ posterior=function(X_s, X_train, Y_train, l=1.0, sigma_f=1.0, sigma_y=1e-8){
     K_ss = kernel(X_s, X_s, l, sigma_f)+ 1e-8 * diag(rep(1,nrow(X_s)))
     K_inv = pinv(K)
     mu_s = t(K_s)%*%K_inv%*%Y_train
-
     cov_s = K_ss - t(K_s)%*%K_inv%*%K_s
-    
     return (list(mu_s, cov_s))}
 ```
 
-Gives us the point to sample next.
+Gives us the point to sample next via the expected improvement criterium.
 ```{r}
 expected_improvement=function( x_proposed,X_train, Y_train,l=1.0, sigma_f=1.0, sigma_y=.001){
     out = posterior(matrix(x_proposed,ncol=1), X_train, Y_train, l, sigma_f, sigma_y)
@@ -239,14 +287,14 @@ expected_improvement=function( x_proposed,X_train, Y_train,l=1.0, sigma_f=1.0, s
 }
 ```
 
-Set up our intial sampled points equaly spread out, and then afterwards chooses 10 more points based on the Bayesian Optimization algorithm.
+Set up our intial sampled points equaly spread out, and then afterwards chooses 10 more points based on the Bayesian Optimization algorithm. Used a log scale.
 ```{r,message=FALSE}
 vals <- seq(-4, 0, length.out = 5)
 scores=c()
 for (i in 1:5){
   scores=c(scores,eval(10^(vals[i])))
 }
-for (i in 1:10){
+for (i in 1:11){
 x_new <- seq(-4, 0, length.out = 1000)
 pred <- expected_improvement(x_new,matrix(vals),matrix(scores),l=.5,sigma_f=.5,sigma_y = .01)
 a= x_new[which.max(log10(pred))]
@@ -256,7 +304,7 @@ scores=c(scores,score)
 }
 ```
 
-"Visualization" of Gaussian Process
+"Visualization" of the Gaussian Process and Expected Improvement. The left graph shows the estimate of our function and the right graph is the Expected Improvment function which we used to choose the next point to sample. The vertical line represents the shrinkage of the next point we will sample.
 ```{r}
 start=4
 for (i in 1:11){
@@ -265,10 +313,10 @@ pred <- expected_improvement(x_new,matrix(vals[1:(start+i)]),matrix(scores[1:(st
 data = data.frame(x = x_new, y = log10(pred))
 colnames(data)=c("x","y")
 line=x_new[which.max(pred)]
-#name=paste("p", toString(2*i),sep="")
 assign("p2",ggplot(data,mapping=aes(x = x, y = y))+
   geom_line(color = "red", linetype = "dashed")+
-  theme_minimal()+geom_vline(xintercept=line))
+  theme_minimal()+geom_vline(xintercept=line))+
+  ylab("Expected Improvment")+xlab("log(shrinkage)")
 
 x_new <- seq(-4, 0, length.out = 1000)
 pred <- posterior(matrix(x_new),as.matrix(vals[1:(start+i)]),matrix(scores[1:(start+i)]),l=1,sigma_f=1,sigma_y = .001)
@@ -277,103 +325,70 @@ sigma <- sqrt(diag(pred[[2]]))
 data = data.frame(x = x_new, y = mu,y_up = mu + sigma, y_low = mu - sigma)
 data2=data.frame(x=vals[1:(start+i)],y=matrix(scores[1:(start+i)]))
 colnames(data)=c("x","y","y_up","y_low")
-#name=paste("p", toString(2*i-1),sep="")
 assign("p1",ggplot()+
   geom_line(data=data,color = "red", linetype = "dashed",mapping=aes(x = x, y = y))+
   geom_ribbon(data=data,fill = "skyblue", alpha = 0.5,mapping=aes(x = x, y = y,ymax = y_up, ymin = y_low)) +
   theme_minimal()+
-  geom_point(data=data2,mapping=aes(x = x, y = y))+geom_vline(xintercept=line))
+  geom_point(data=data2,mapping=aes(x = x, y = y))+geom_vline(xintercept=line))+
+  ylab("AUC")+xlab("log(shrinkage)")
 grid.arrange(p1,p2,ncol=2)
 }
-#grid.arrange(p1, p2, p3,p4,p5,p6,p7,p8,p9,p10,p11,p12,ncol=2)
 ```
 
-Choose shrinkage based off Gaussian Process
+Choose shrinkage based off Gaussian Process.
 ```{r}
 x_new <- seq(-4, 0, length.out = 1000)
 pred <- posterior(matrix(x_new),as.matrix(vals),matrix(scores),l=1,sigma_f=1,sigma_y = .001)
 mu <- pred[[1]]
-shrink=10^x_new[which.max(mu)]
+(shrink=10^x_new[which.max(mu)])
 ```
 
-Oversample training set, and perform boosting. Then evaluate via AUC, accuracy, and table.
+Oversample training set, and perform boosting.
 ```{r}
-train=ovun.sample(y~.,train,method="over",p=.5)$data
-boost=gbm(y~.,data=train,distribution="bernoulli",n.trees=1000, shrinkage=shrink)
+train=ovun.sample(y~.,train,method="under",p=.5)$data
+boost=gbm(y~.,data=train,distribution="bernoulli",n.trees=ntree, shrinkage=shrink)
 summary(boost)
+```
+From looking at the important table and graph, it is clear that the euribor3m is the strongest predictor. As we saw above, it should be noted that this variable was strongly correlaated with the "employment variation rate" and "number of employees." All of these are metrics of the economy and are likely also correlated with the interest rates the bank is offering. "Month" was a distant but clear second; this is of interest as nothing immediately comes to mind for why month would have a strong effect. One possibility is that given that the data was gathered over the short span of a year and a half, outside events could have had an effect on some months but there was not enough time for those outside unrelated events to get averaged out. The third most important predictor was the persons "job," which makes sense logically since wealthier people will likely have more money to invest. Following job, no other variables make larger contributions, although they do have small effects.
+
+
+Evaluate via AUC, accuracy, and table.
+```{r}
 pred=predict(boost,test,type="response")
 roc=roc(test$y,pred,plot=TRUE)
-roc$auc
+cat("AUC:",roc$auc,"\n")
 pred=ifelse(predict(boost,test,type="response")>.5,1,0)
-mean(pred==test$y)
+cat("Accuracy:",mean(pred==test$y),"\n")
+cat("Contingency table:\n")
 table(pred,test$y)
 #table(c(1,1,0),c(0,0,1))
 ```
+Our model's AUC of .8067 is commendable, given that week exluded the "duration of call variable." Had we included that variable, our model's AUC increased to .94 (not shown), whichis very good. The accuracy is only ~83%, but that is not our metric of interest. If we look at the contigency table, most of our errors resulted from False positives, the prefered error since we'd rather make an extra call than lose a customer.
 
-#Model Analysis
-```{r}
-predict_yes=test[which(pred==1),]
-mean(test$education)
-mean(predict_yes$education)
-mean(test$age)
-mean(predict_yes$age)
-mean(test$marital=="married")
-mean(predict_yes$marital=="married")
-mean(test$loan=="yes")
-mean(predict_yes$loan=="yes")
-mean(test$housing=="yes")
-mean(predict_yes$housing=="yes")
-```
+#Billy's Stuff
 
-```{r}
-hist(test$education,breaks=5)
-hist(predict_yes$education,breaks=5)
-hist(test$age,breaks=10)
-hist(predict_yes$age,breaks=10)
-```
+#Trevor's Stuff
 
-```{r}
-hist(bank_data$euribor3m)#[which(bank_data$nr.employed<5150)])
-hist(bank_data$nr.employed)
-hist(bank_data$emp.var.rate)
-hist(bank_data$emp.var.rate[which(bank_data$euribor3m>3)])
-```
 
-#Random Forest
-```{r}
-sam=sample(4119,400)
-train=bank_data[-sam,]
-train=ovun.sample(y~.,train,method="over",p=.5)$data
-test=bank_data[sam,]
-rf=randomForest(y ~ ., train)
-pred=predict(rf,test)
-pred=ifelse(pred=="yes",1,0)
-test$y=ifelse(test$y=="yes",1,0)
-mean(pred==test$y)
-table(pred,test$y)
-rf[["confusion"]]
-```
 
-```{r}
-roc=roc(test$y,pred)
-plot(roc)
-roc$auc
-```
+
+
+
 
 #PCA
-```{r}
-bank_data=read_delim("bank-additional/bank-additional.csv",";",col_names=TRUE,col_types = "iffccffffcdddifdddddf")
+```{r,eval=FALSE}
+#bank_data=read_delim("bank-additional/bank-additional.csv",";",col_names=TRUE,col_types = "iffccffffcdddifdddddf")
 ```
 
-```{r}
+```{r,eval=FALSE}
 #
 #c(2,5,10:14,16:20)
-a=bank_data
-a[c(1,4,9:13,15:19)]=factor(a[c(1,4,9:13,15:19)])
-pca=PCAmix(as.matrix(a[,c(1,4,9:13,15:19)],a[,-c(1,4,9:13,15:19)],rename.level = TRUE))
+#a=bank_data
+#a[c(1,4,9:13,15:19)]=factor(a[c(1,4,9:13,15:19)])
+#pca=PCAmix(as.matrix(a[,c(1,4,9:13,15:19)],a[,-c(1,4,9:13,15:19)],rename.level = TRUE))
 ```
 
-```{r}
-a$y=ifelse(a$y=="yes",1,0)
-plot(pca$scores.stand[,1],pca$scores.stand[,2],col=(a$y+3))
+```{r,eval=FALSE}
+#a$y=ifelse(a$y=="yes",1,0)
+#plot(pca$scores.stand[,1],pca$scores.stand[,2],col=(a$y+3))
 ```
