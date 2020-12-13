@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+```{r, message=FALSE}
 library(tidyverse)
 library(randomForest)
 library(missForest)
@@ -39,7 +39,7 @@ On top of that, we are also curious to see how much predictive power the extra d
 
 Finally, the dataset contains lots of missing data; we would like to see how the different ways we can handle these missing data points affects the accuracy of our model.
 
-#Data Analysis  
+# Data Analysis  
 One key thing to note about our dataset is that along with the response variable “y,” there is also the “duration of call” variable which we would not know before we called the individual. Thus, assuming this model is going to be used to select who to call, we are choosing to remove this. This will very much hurt our model’s power, but from the perspective of the bank it is necessary to do.
 
 Given our data set is overpopulated by people who didn’t sign up for the program, using a metric of proportion correctly classified doesn’t make sense, since a model that predicts “no” for every individual will perform very well, resulting in the models we build being skewed to predicting “no”. The bank is presumably most interested in identifying the people who sign up, so we need a better metric for evaluating our model. Thus, we will use a receiver operating characteristic (ROC) curve, which plots the specificity of the model against the sensitivity. The area under the  ROC curve (AUC) provides a metric of how well the model can pick up on True-positives while not substantially increasing the number of false positives. One technique we can use to help us increase the model’s predictive power is to undersample. This will remove some of the “no” samples from our training set; in effect this increase the weighting of the "yes" samples, thus effectively increasing the penalty for misclassifying them. Doing so will increase the AUC of the model, since the model will now be more willing to report false positives in exchange for less false negatives.
