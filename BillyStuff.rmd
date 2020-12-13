@@ -1,0 +1,113 @@
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(randomForest)
+library(missForest)
+library(PCAmixdata)
+library(gbm)
+library(pROC)
+library(ROSE)
+library(Hmisc)
+library(rBayesianOptimization)
+library(plotly)
+library(GPfit)
+library(lintools)
+library(gridExtra)
+```
+
+2. Is the updated data necessary to improve that predictor, meaning can we be just as accurate with the not-additional dataset?
+
+Read in non-additional dataset.
+```{r}
+bank_full=read_delim("bank-full.csv",";",col_names=TRUE,col_types = "dffffdfffdfddddff")
+```
+
+Education has a logical order so we can convert it to numeric.
+```{r}
+bank_full$education=ifelse(bank_full$education=="primary",1,ifelse(bank_full$education=="secondary",2,ifelse(bank_full$education== "tertiary",3,NA)))
+bank_full$education=as.numeric(bank_full$education)
+mean=mean(bank_full$education,na.rm=TRUE) 
+bank_full$education[which(is.na(bank_full$education))]=mean
+```
+
+Default has 815 occurrences of "yes", less than 2 percent of the total observations. It does not seem reasonable to include "default".
+```{r}
+length(which(bank_full$default=="yes")) #intensive
+bank_full=within(bank_full,rm("default")) 
+```
+Day of the week with mean imputation.
+```{r}
+mean=mean(bank_full$day,na.rm=TRUE)
+bank_full$day[which(is.na(bank_full$day))]=mean 
+```
+
+Months with low number of data points merged.
+```{r}
+ggplot(bank_full,aes(x=month,fill=as.factor(y)))+geom_bar()
+length(which(bank_full$month=="dec" & bank_full$y=="yes"))
+levels(bank_full$month)
+levels(bank_full$month)[levels(bank_full$month) == "nov" |levels(bank_full$month) == "dec"] ="nov/dec"
+levels(bank_full$month)[levels(bank_full$month) == "sep" |levels(bank_full$month) == "oct"] ="sep/oct"
+levels(bank_full$month)[levels(bank_full$month) == "mar" |levels(bank_full$month) == "apr"] ="mar/apr"
+ggplot(bank_full,aes(x=month,fill=as.factor(y)))+geom_bar()
+bank_full$month=as.factor(bank_full$month)
+```
+
+"duration" is not particularly useful as a predictor.
+```{r}
+bank_full=within(bank_full,rm("duration"))
+```
+
+Only 7 percent of observations greater than or equal to 3 for predictor "previous" therefore it is reasonable to merge.
+```{r}
+ggplot(bank_full,aes(x=previous,fill=as.factor(y)))+geom_bar()
+length(which(bank_full$previous>=3))
+bank_full$previous[which(bank_full$previous>=3)]=3
+ggplot(bank_full,aes(x=previous,fill=as.factor(y)))+geom_bar()
+length(which(bank_full$previous == 0))
+```
+
+There are 0 observations in which pdays == 0 (last contact was same day). It may be reasonable to remove all observations in which the client has never been contacted before.
+```{r}
+ggplot(bank_full,aes(x=pdays,fill=as.factor(y)))+geom_histogram()
+ggplot(bank_full[which(bank_full$pdays>0),],aes(x=pdays,fill=as.factor(y)))+geom_histogram()
+length(which(bank_full$pdays == 0))
+#bank_full$pdays[bank_full$pdays < 1] = NA
+
+```
+
+
+```{r}
+bank_full[bank_full=="unknown"]=NA
+```
+
+
+```{r}
+bank_full$housing=impute(bank_full$housing,fun=mode)
+bank_full$loan=impute(bank_full$loan,fun=mode)
+bank_full$job=impute(bank_full$job,fun=mode)
+bank_full$marital=impute(bank_full$marital,fun=mode)
+bank_full$contact=impute(bank_full$contact,fun=mode)
+bank_full$poutcome=impute(bank_full$poutcome,fun=mode)
+```
+
+Partition into train/test sets. tsize = 11303
+```{r}
+tsize=11303
+sam=sample(45211,tsize)
+test=bank_full[sam,]
+train=bank_full[-sam,]
+```
+
+Random Forest
+```{r}
+rf=randomForest(y ~ ., train)
+pred=predict(rf,test)
+pred=ifelse(pred=="yes",1,0)
+test$y=ifelse(test$y=="yes",1,0)
+mean(pred==test$y)
+table(pred,test$y)
+rf[["confusion"]]
