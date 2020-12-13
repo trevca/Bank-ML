@@ -79,7 +79,7 @@ bank_data$education[which(is.na(bank_data$education))]=mean
 ##### Job of Client 
 Leave "unknown" as job category. It is a large enough group on its own and we would lose information by imputing.
 ```{r}
-ggplot(bank_data,aes(job))+geom_bar()
+ggplot(bank_data,aes(job,fill=as.factor(y)))+geom_bar()
 length(which(is.na(bank_data$job)))
 bank_data$housing[which(is.na(bank_data$housing))]="unknown"
 ```
@@ -223,8 +223,8 @@ ggplot(bank_data,aes(age,fill=as.factor(y)))+geom_histogram()
 Set up for boosting, split into train/test sets
 ```{r}
 n=nrow(bank_data)
-ntree=2500 #Number of Trees
-tsize=7500 #size of test set
+ntree=1500 #Number of Trees
+tsize=5000 #size of test set
 sam=sample(n,tsize)
 test=bank_data[sam,]
 train=bank_data[-sam,]
@@ -349,7 +349,7 @@ train=ovun.sample(y~.,train,method="under",p=.5)$data
 boost=gbm(y~.,data=train,distribution="bernoulli",n.trees=ntree, shrinkage=shrink)
 summary(boost)
 ```
-From looking at the important table and graph, it is clear that the euribor3m is the strongest predictor. As we saw above, it should be noted that this variable was strongly correlaated with the "employment variation rate" and "number of employees." All of these are metrics of the economy and are likely also correlated with the interest rates the bank is offering. "Month" was a distant but clear second; this is of interest as nothing immediately comes to mind for why month would have a strong effect. One possibility is that given that the data was gathered over the short span of a year and a half, outside events could have had an effect on some months but there was not enough time for those outside unrelated events to get averaged out. The third most important predictor was the persons "job," which makes sense logically since wealthier people will likely have more money to invest. Following job, no other variables make larger contributions, although they do have small effects.
+From looking at the important table and graph, the most important predictor was the persons "job," which makes sense logically since wealthier people will likely have more money to invest. It is interesting though that this was such an important predictor though given that there did not appear to be a strong correlation with sucess in the boxplot of jobs. Euribor3m is a close second. As we saw above, it should be noted that this variable was strongly correlaated with the "employment variation rate" and "number of employees." All of these are metrics of the economy and are likely also correlated with the interest rates the bank is offering. "Month" was a distant but clear third; this is of interest as nothing immediately comes to mind for why month would have a strong effect. One possibility is that given that the data was gathered over the short span of a year and a half, outside events could have had an effect on some months but there was not enough time for those outside unrelated events to get averaged out. Following month, no other variables make larger contributions, although they do have small effects.
 
 
 Evaluate via AUC, accuracy, and table.
@@ -363,7 +363,7 @@ cat("Contingency table:\n")
 table(pred,test$y)
 #table(c(1,1,0),c(0,0,1))
 ```
-Our model's AUC of .8067 is commendable, given that week exluded the "duration of call variable." Had we included that variable, our model's AUC increased to .94 (not shown), whichis very good. The accuracy is only ~83%, but that is not our metric of interest. If we look at the contigency table, most of our errors resulted from False positives, the prefered error since we'd rather make an extra call than lose a customer.
+Our model's AUC of .7934 is commendable, given that week exluded the "duration of call variable." Had we included that variable, our model's AUC increased to .94 (not shown), whichis very good. The accuracy is only ~83%, but that is not our metric of interest. If we look at the contigency table, most of our errors resulted from False positives, the prefered error since we'd rather make an extra call than lose a customer.
 
 #Billy's Stuff
 
