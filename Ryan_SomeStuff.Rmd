@@ -1,7 +1,7 @@
 ---
-title: "STA141_FP"
-author: "Ryan Buchner"
-date: "12/1/2020"
+title: "STA141 Bank Project"
+author: "Ryan Buchner, Trevor Carpenter, Billy Chow"
+date: "12/14/2020"
 output: html_document
 ---
 
@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r,message=FALSE}
+```{r, message=FALSE, echo = FALSE}
 library(tidyverse)
 library(randomForest)
 library(missForest)
@@ -21,10 +21,13 @@ library(Hmisc)
 library(GPfit)
 library(lintools)
 library(gridExtra)
+
 ```
-For Reproducability
-```{r}
+
+```{r, echo = FALSE}
+# For Reproducability
 set.seed(1)
+
 ```
 
 # Background  
@@ -45,31 +48,36 @@ One key thing to note about our dataset is that along with the response variable
 Given our data set is overpopulated by people who didn’t sign up for the program, using a metric of proportion correctly classified doesn’t make sense, since a model that predicts “no” for every individual will perform very well, resulting in the models we build being skewed to predicting “no”. The bank is presumably most interested in identifying the people who sign up, so we need a better metric for evaluating our model. Thus, we will use a receiver operating characteristic (ROC) curve, which plots the specificity of the model against the sensitivity. The area under the  ROC curve (AUC) provides a metric of how well the model can pick up on True-positives while not substantially increasing the number of false positives. One technique we can use to help us increase the model’s predictive power is to undersample. This will remove some of the “no” samples from our training set; in effect this increase the weighting of the "yes" samples, thus effectively increasing the penalty for misclassifying them. Doing so will increase the AUC of the model, since the model will now be more willing to report false positives in exchange for less false negatives.
 
 
-Read in data with specifications
-```{r}
+```{r, echo = FALSE}
+# Data Processing
+# Read in data with specifications
 bank_data=read_delim("bank-additional/bank-additional-full.csv",";",col_names=TRUE,col_types = "dfffffffcfddddfdddddf")
+
 ```
 
-Replace unknowns with NA
-```{r}
+
+```{r, echo = FALSE}
+# Replace unknowns with NA
 bank_data[bank_data=="unknown"]=NA
+
 ```
 
-Change the response variable to numeric.
-```{r}
+```{r, echo = FALSE}
+# Change the response variable to numeric.
 bank_data$y=ifelse(bank_data$y=="yes",1,0)
+
 ```
 
 
 ##### Duration of Call 
-Removing "call duration" since technically we wouldn't know this before we called them up. However, this variable is a very strong predictor of sucess so removing it will hurt our model.
-```{r}
-bank_data=within(bank_data,rm("duration"))
+We remove "call duration" since technically we wouldn't know this before we called the person up. However, this variable is a very strong predictor of sucess so removing it will hurt our model.
+```{r, echo = FALSE}
+bank_data = within(bank_data,rm("duration"))
 ```
 
 ##### Education Level  
 Education has a logical order to it so we can convert it to a numeric. This works for trees, but not necessarily for neural networks or regression since the distances between the levels which we made all equal to 1 are arbitrary. We will mean impute for the missing values, assuming that they are average in terms of education. This is an assumption we are making and could be false (e.g. unknown educaton people might actually be less educated on average)
-```{r}
+```{r, echo = FALSE}
 bank_data$education=ifelse(bank_data$education=="illiterate",0,ifelse(bank_data$education=="basic.4y",1,ifelse(bank_data$education== "basic.6y",2,ifelse(bank_data$education== "basic.9y",3,ifelse(bank_data$education== "high.school",4,ifelse(bank_data$education== "university.degree",5,ifelse(bank_data$education== "professional.course",0,NA)))))))
 bank_data$education=as.numeric(bank_data$education)
 mean=mean(bank_data$education,na.rm=TRUE) 
@@ -77,15 +85,14 @@ bank_data$education[which(is.na(bank_data$education))]=mean
 ```
 
 ##### Job of Client 
-Leave "unknown" as job category. It is a large enough group on its own and we would lose information by imputing.
-```{r}
+We leave "unknown" as a job category. It is a large enough group on its own and we would lose information by imputing.
+```{r, echo = FALSE}
 ggplot(bank_data,aes(job,fill=as.factor(y)))+geom_bar()
-length(which(is.na(bank_data$job)))
 bank_data$housing[which(is.na(bank_data$housing))]="unknown"
 ```
 
-Appears to be a correlation between job and education, doesn't appear strong enough to justify removing one. And as we will see from our model, neither end up as super important variables anyways.
-```{r}
+There appears to be a correlation between job and education, but it doesn't appear strong enough to justify removing one. And as we will see from our model, neither end up as super important variables anyways.
+```{r, echo = FALSE}
 names=c()
 means=c()
 for (i in 1:12){
@@ -103,36 +110,35 @@ rm(i)
 
 ##### Has Credit in Default?
 Default has only 3 occurences of "yes" so it won't be a good predictor. If ever used, it could cause overfitting of "yes" individuals. Might want to reconsider once looking at fill data set since that might have more "yes" occurences to the point where we can reasonably include it.
-```{r}
-unique(bank_data$default)
-length(which(bank_data$default=="yes"))
+```{r, echo = FALSE}
+cat("Number of 'yes' default values: ", length(which(bank_data$default=="yes")), "\n")
 bank_data=within(bank_data,rm("default"))
 ```
 
 
 ##### Economic Factors  
 Analyze the economic variables. "nr.employed" is number of people employed, "emp.var.rate" is a measure of economic volatability, "euribor3m" is a measure of interest rates, "cons.price.idx" (consumer price index) is a measure of the change in prices for consumer goods and services, and "cons.conf.idx" (consumer confidence index) measures optimism about the economy.
-```{r}
+```{r, echo = FALSE}
 econ=data.frame(emp=bank_data$nr.employed,evr=bank_data$emp.var.rate,eur=bank_data$euribor3m,pri=bank_data$cons.price.idx ,conf=bank_data$cons.conf.idx)
 heatmap(cor(econ),scale="none")
 rm(econ)
 ```
 
 There is too much correlation between the nr.employed, emp.var.rate, and euribor3m, so we will remove two of them. Since they all provide essentially the same information, removing them will force the model to make predictions off other variables as well instead of relying on these variable exclusively.
-```{r}
+```{r, echo = FALSE}
 bank_data=within(bank_data,rm("nr.employed"))
 bank_data=within(bank_data,rm("emp.var.rate"))
 ```
 
 ##### Outcome of Previous Contact  
 Even though p-outcome is dominated by "non-existent," it seems that there are enough of yes/no in each of the categories to avoid overfitting. Thus, we can avoid making any changes.
-```{r}
+```{r, echo = FALSE}
 ggplot(bank_data,aes(x=poutcome,fill=as.factor(y)))+geom_bar()
 ```
 
 ##### Day of the Week  
 There is some order to day of the week, so we changed it to a numeric variable, and then mean imputed to fill in missing data. However, we tested using this as a categorical variable as well and it appeared to make no difference, most likely because it is not a strong predictor.
-```{r}
+```{r, echo = FALSE}
 bank_data$day_of_week=ifelse(bank_data$day_of_week=="mon",0,ifelse(bank_data$day_of_week=="tue",1,ifelse(bank_data$day_of_week=="wed",2,ifelse(bank_data$day_of_week=="thu",3,ifelse(bank_data$day_of_week== "fri",4,NA)))))
 bank_data$day_of_week=as.numeric(bank_data$day_of_week)
 bank_data$day_of_week=as.numeric(bank_data$day_of_week)
@@ -142,29 +148,29 @@ bank_data$day_of_week[which(is.na(bank_data$day_of_week))]=mean#mean imputation
 
 ##### Has Housing Loan  
 Housing is equally distributed between yes and no. No clear way to proceed with the missing values here through mode imputation, so it seems the best option will be to leave unknown as its own category.
-```{r}
+```{r, echo = FALSE}
 ggplot(bank_data,aes(x=housing,fill=as.factor(y)))+geom_bar()
 bank_data$housing[which(is.na(bank_data$housing))]="unknown"
 ```
 
 Will be best to leave unknown as its own category for "loan". Enough data points where we can justify leaving it as its own category.
-```{r}
+```{r, echo = FALSE}
 ggplot(bank_data,aes(x=loan,fill=as.factor(y)))+geom_bar()
 bank_data$loan[which(is.na(bank_data$loan))]="unknown"
-length(which(bank_data$loan=="unknown"))
+cat("Number of unknown loan values:", length(which(bank_data$loan=="unknown")), "\n")
 ```
 
 ##### Martital Status  
 Good distribution of data for the marital category, but very few "unknowns" to the point where leaving them as their own category could cause overfitting. Instead we propose mode imputation.
-```{r}
+```{r, echo = FALSE}
 ggplot(bank_data,aes(x=marital,fill=as.factor(y)))+geom_bar()
-length(which(is.na(bank_data$marital)))
+cat("Number of unknown marital values", length(which(is.na(bank_data$marital))), "\n")
 bank_data$marital=impute(bank_data$marital,fun=mode)
 ```
 
 ##### Number of Days since last contacted  
 To avoid overfitting, we will make this categorical with 2 categories,<999 and >=999. This is because there are two strong groups, but if we look at the individual counts of the data, the different values at the lower end of the spectrum all have low individual frequency. This does have a strong correaltion with poutcome though, so we will choose to remove poutcome.
-```{r}
+```{r, echo = FALSE, warning = FALSE}
 ggplot(bank_data,aes(x=pdays,fill=as.factor(y)))+geom_histogram()
 ggplot(bank_data[which(bank_data$pdays<900),],aes(x=pdays,fill=as.factor(y)))+geom_histogram()
 bank_data$pdays=as.factor(ifelse(bank_data$pdays<999,"recent","long_ago"))
@@ -174,34 +180,31 @@ bank_data=within(bank_data,rm("poutcome"))
 ```
 
 ##### Method of Contact  
-Nothing we expect to be correlated with contact, so no filtering to do here.
-```{r}
+There is nothing we expect to be correlated with contact, so no filtering to do here.
+```{r, echo = FALSE}
 ggplot(bank_data,aes(x=contact,fill=as.factor(y)))+geom_bar()
 ```
 
 ##### Month  
-Month data seems alright, except some of the months lack data points, which could lead to overfitting. As a result, we will assign all december cases to a joint Nov/Dec variable.
-```{r}
+Month data seems alright, except some of the months lack data points, which could lead to overfitting. As a result, we will assign all December cases to a joint Nov/Dec variable.
+```{r, echo = FALSE}
 ggplot(bank_data,aes(x=month,fill=as.factor(y)))+geom_bar()
-length(which(bank_data$month=="dec" & bank_data$y==0))
+cat("Number of December month values:", length(which(bank_data$month=="dec" & bank_data$y==0)), "\n")
 bank_data$month[which(bank_data$month=="nov" | bank_data$month=="dec")]="nov/dev"
-#bank_data$month[which(bank_data$month=="sept" | bank_data$month=="oct")]="sept/oct"
-#bank_data$month[which(bank_data$month=="mar" | bank_data$month=="apr")]="mar/apr"
 ggplot(bank_data,aes(x=month,fill=as.factor(y)))+geom_bar()
 bank_data$month=as.factor(bank_data$month)
 ```
 
 ##### Number of Previous Contacts  
-Not enough 5's, and 6's. Will merge those 2 together to create a more robust model.
-```{r}
+There are not enough 5's, and 6's. We will merge those 2 together to create a more robust model.
+```{r, echo = FALSE}
 ggplot(bank_data,aes(x=previous,fill=as.factor(y)))+geom_bar()
-length(which(bank_data$previous>=5))
 bank_data$previous[which(bank_data$previous>=5)]=5
 ```
 
 ##### Client Age
 Look at age distribution, may want to remove outliers since they may lead to overfitting for those points in the test set. However, through cross validation we realized that removing these data points hurts the models efficiency.
-```{r}
+```{r, echo = FALSE, warning=FALSE}
 quantile(bank_data$age)
 ggplot(bank_data,aes(age,fill=as.factor(y)))+geom_histogram()
 ```
@@ -220,8 +223,10 @@ ggplot(bank_data,aes(age,fill=as.factor(y)))+geom_histogram()
 
 # Our Model
 
-Set up for boosting, split into train/test sets
-```{r}
+### Question 1: How can we build our model in order to best assist the bank in predicting users who are likely to sign up for a deposit.
+
+```{r, echo = FALSE}
+# Question 1
 n=nrow(bank_data)
 ntree=1500 #Number of Trees
 tsize=5000 #size of test set
@@ -230,8 +235,9 @@ test=bank_data[sam,]
 train=bank_data[-sam,]
 ```
 
-This evaluation function implement cross validation manually.
-```{r}
+
+```{r, echo = FALSE}
+# This evaluation function implement cross validation manually.
 eval<-function(shrink){
   sam2=sample(n-tsize,n-tsize)
   score=0
@@ -251,17 +257,22 @@ eval<-function(shrink){
   }
   return(score)
 }
+
 ```
 
-Our kernel function for the Bayesian Optimization.
-```{r}
+
+```{r, echo = FALSE}
+# Our kernel function for the Bayesian Optimization.
 kernel=function(X1, X2, l=1.0, sigma_f=1.0){
     sqdist =  sweep(sweep(- 2 * X1%*% t(X2),1,rowSums(X1^2),FUN="+"),2, rowSums(X2^2),FUN="+")
-    return (sigma_f^2 * exp(-0.5 / l^2 * sqdist))}
+    return (sigma_f^2 * exp(-0.5 / l^2 * sqdist))
+}
+
 ```
 
-Posterior function utilizes the above Kernel function to make predictions about the mean and variance at the points X_s. 
-```{r}
+
+```{r, echo = FALSE}
+# Posterior function utilizes the above Kernel function to make predictions about the mean and variance at the points X_s. 
 posterior=function(X_s, X_train, Y_train, l=1.0, sigma_f=1.0, sigma_y=1e-8){
     K = kernel(X_train, X_train, l, sigma_f) + sigma_y^2 * diag(rep(1,nrow(X_train)))
     K_s = kernel(X_train, X_s, l, sigma_f)
@@ -270,10 +281,11 @@ posterior=function(X_s, X_train, Y_train, l=1.0, sigma_f=1.0, sigma_y=1e-8){
     mu_s = t(K_s)%*%K_inv%*%Y_train
     cov_s = K_ss - t(K_s)%*%K_inv%*%K_s
     return (list(mu_s, cov_s))}
+
 ```
 
-Gives us the point to sample next via the expected improvement criterium.
-```{r}
+```{r, echo = FALSE}
+# Gives us the point to sample next via the expected improvement criterium.
 expected_improvement=function( x_proposed,X_train, Y_train,l=1.0, sigma_f=1.0, sigma_y=.001){
     out = posterior(matrix(x_proposed,ncol=1), X_train, Y_train, l, sigma_f, sigma_y)
     mu=out[[1]]
@@ -285,10 +297,11 @@ expected_improvement=function( x_proposed,X_train, Y_train,l=1.0, sigma_f=1.0, s
     z = delta / std
     return (delta * pnorm(z) + std * dnorm(z))
 }
+
 ```
 
-Set up our intial sampled points equaly spread out, and then afterwards chooses 10 more points based on the Bayesian Optimization algorithm. Used a log scale.
-```{r,message=FALSE}
+First we set up our intial sampled points equaly spread out, and then afterwards chooses 10 more points based on the Bayesian Optimization algorithm. For this we used a log scale.
+```{r,message=FALSE, echo = FALSE}
 vals <- seq(-4, 0, length.out = 5)
 scores=c()
 for (i in 1:5){
@@ -304,8 +317,9 @@ scores=c(scores,score)
 }
 ```
 
-"Visualization" of the Gaussian Process and Expected Improvement. The left graph shows the estimate of our function and the right graph is the Expected Improvment function which we used to choose the next point to sample. The vertical line represents the shrinkage of the next point we will sample.
-```{r}
+We then create a "Visualization" of the Gaussian Process and Expected Improvement. The left graph shows the estimate of our function and the right graph is the Expected Improvment function which we used to choose the next point to sample. The vertical line represents the shrinkage of the next point we will sample.
+
+```{r, echo = FALSE}
 start=4
 for (i in 1:11){
 x_new <- seq(-4, 0, length.out = 1000)
@@ -335,16 +349,16 @@ grid.arrange(p1,p2,ncol=2)
 }
 ```
 
-Choose shrinkage based off Gaussian Process.
-```{r}
+We choose a shrinkage value based off of Gaussian Process.
+```{r, echo = FALSE}
 x_new <- seq(-4, 0, length.out = 1000)
 pred <- posterior(matrix(x_new),as.matrix(vals),matrix(scores),l=1,sigma_f=1,sigma_y = .001)
 mu <- pred[[1]]
 (shrink=10^x_new[which.max(mu)])
 ```
 
-Oversample training set, and perform boosting.
-```{r}
+Now we oversample the training set, and perform boosting. The following graph is a summary of the boosting and a relative influence graph.
+```{r, echo = FALSE}
 train=ovun.sample(y~.,train,method="under",p=.5)$data
 boost=gbm(y~.,data=train,distribution="bernoulli",n.trees=ntree, shrinkage=shrink)
 summary(boost)
@@ -352,8 +366,8 @@ summary(boost)
 From looking at the important table and graph, the most important predictor was the persons "job," which makes sense logically since wealthier people will likely have more money to invest. It is interesting though that this was such an important predictor though given that there did not appear to be a strong correlation with sucess in the boxplot of jobs. Euribor3m is a close second. As we saw above, it should be noted that this variable was strongly correlaated with the "employment variation rate" and "number of employees." All of these are metrics of the economy and are likely also correlated with the interest rates the bank is offering. "Month" was a distant but clear third; this is of interest as nothing immediately comes to mind for why month would have a strong effect. One possibility is that given that the data was gathered over the short span of a year and a half, outside events could have had an effect on some months but there was not enough time for those outside unrelated events to get averaged out. Following month, no other variables make larger contributions, although they do have small effects.
 
 
-Evaluate via AUC, accuracy, and table.
-```{r}
+Evaluating via AUC, accuracy, and table gives us the following.
+```{r, echo = FALSE}
 pred=predict(boost,test,type="response")
 roc=roc(test$y,pred,plot=TRUE)
 cat("AUC:",roc$auc,"\n")
@@ -364,9 +378,7 @@ table(pred,test$y)
 ```
 Our model's AUC of .8029 is commendable, given that week exluded the "duration of call variable." Had we included that variable, our model's AUC increased to .94 (not shown), whichis very good. The accuracy is only ~81%, but that is not our metric of interest. If we look at the contigency table, most of our errors resulted from False positives, the prefered error since we'd rather make an extra call than lose a customer. As the bank, there is more of a cost to not calling a customer when they would have said yes than there is to calling a customer who says no.
 
-#Billy's Stuff
-
-#Trevor's Stuff
+### Question 2: Billy's Stuff
 
 
 
@@ -374,12 +386,142 @@ Our model's AUC of .8029 is commendable, given that week exluded the "duration o
 
 
 
-#PCA
-```{r,eval=FALSE}
+
+
+
+
+
+
+
+
+
+
+
+
+### Question 3: Does excluding NA and unknown values from the model at the beginning have a significant effect on the model?
+
+```{r, echo = FALSE}
+# Question 3
+
+process_data = function(bank_data) {
+  bank_data[bank_data=="unknown"]=NA
+
+
+  bank_data$y=ifelse(bank_data$y=="yes",1,0)
+  
+  
+  bank_data = within(bank_data,rm("duration"))
+  
+  
+  bank_data$education=ifelse(bank_data$education=="illiterate",0,ifelse(bank_data$education=="basic.4y",1,ifelse(bank_data$education== "basic.6y",2,ifelse(bank_data$education== "basic.9y",3,ifelse(bank_data$education== "high.school",4,ifelse(bank_data$education== "university.degree",5,ifelse(bank_data$education== "professional.course",0,NA)))))))
+  bank_data$education=as.numeric(bank_data$education)
+  mean=mean(bank_data$education,na.rm=TRUE) 
+  bank_data$education[which(is.na(bank_data$education))]=mean
+  
+  
+  bank_data$housing[which(is.na(bank_data$housing))]="unknown"
+  
+  
+  bank_data=within(bank_data,rm("default"))
+  
+  bank_data=within(bank_data,rm("nr.employed"))
+  bank_data=within(bank_data,rm("emp.var.rate"))
+  
+  
+  bank_data$day_of_week=ifelse(bank_data$day_of_week=="mon",0,ifelse(bank_data$day_of_week=="tue",1,ifelse(bank_data$day_of_week=="wed",2,ifelse(bank_data$day_of_week=="thu",3,ifelse(bank_data$day_of_week== "fri",4,NA)))))
+  bank_data$day_of_week=as.numeric(bank_data$day_of_week)
+  bank_data$day_of_week=as.numeric(bank_data$day_of_week)
+  mean=mean(bank_data$day_of_week,na.rm=TRUE)
+  bank_data$day_of_week[which(is.na(bank_data$day_of_week))]=mean
+  
+  bank_data$housing[which(is.na(bank_data$housing))]="unknown"
+  
+  
+  bank_data$loan[which(is.na(bank_data$loan))]="unknown"
+  
+  
+  bank_data$marital=impute(bank_data$marital,fun=mode)
+  
+  
+  bank_data=within(bank_data,rm("poutcome"))
+  
+  
+  bank_data$month[which(bank_data$month=="nov" | bank_data$month=="dec")]="nov/dev"
+  
+  bank_data$month=as.factor(bank_data$month)
+  
+  
+  bank_data$previous[which(bank_data$previous>=5)]=5
+  
+  return(bank_data)
+}
+```
+
+```{r, echo = FALSE}
+upsample_data = function(bank_data) {
+  ntree <<- 1500 #Number of Trees
+  tsize <<- 5000 #size of test set
+  sam <<- sample(n,tsize)
+  test <<- bank_data[sam,]
+  train <<- bank_data[-sam,]
+  vals <- seq(-4, 0, length.out = 5)
+  scores=c()
+  for (i in 1:5){
+    scores=c(scores,eval(10^(vals[i])))
+  }
+  for (i in 1:11){
+    x_new <- seq(-4, 0, length.out = 1000)
+    pred <- expected_improvement(x_new,matrix(vals),matrix(scores),l=.5,sigma_f=.5,sigma_y = .01)
+    a= x_new[which.max(log10(pred))]
+    score=eval(10^a)
+    vals=c(vals,a)
+    scores=c(scores,score)
+  }
+  x_new <- seq(-4, 0, length.out = 1000)
+  pred <- posterior(matrix(x_new),as.matrix(vals),matrix(scores),l=1,sigma_f=1,sigma_y = .001)
+  mu <- pred[[1]]
+  (shrink=10^x_new[which.max(mu)])
+  train=ovun.sample(y~.,train,method="under",p=.5)$data
+  boost=gbm(y~.,data=train,distribution="bernoulli",n.trees=ntree, shrinkage=shrink)
+  return(list(train, test, boost))
+}
+```
+
+```{r, message = FALSE, echo = FALSE}
+bank_data = read_delim("bank-additional/bank-additional-full.csv",";",col_names=TRUE,col_types = "dfffffffcfddddfdddddf")
+
+bank_data[bank_data=="unknown"] = NA
+bank_data = na.exclude(bank_data)
+```
+
+Removing 'unknown' and 'NA' values reduces the data from 41188 observations to 30488 observations. While this is a large difference, it is still a significantly large number of observations and we plan to upsample the data later.
+
+```{r, message = FALSE, echo = FALSE}
+bank_data = process_data(bank_data)
+n = nrow(bank_data)
+upsample_output = upsample_data(bank_data)
+
+train = upsample_output[[1]]
+test = upsample_output[[2]]
+boost = upsample_output[[3]]
+
+pred=predict(boost,test,type="response")
+roc=roc(test$y,pred,plot=FALSE)
+cat("AUC:",roc$auc,"\n")
+pred=ifelse(predict(boost,test,type="response")>.5,1,0)
+cat("Accuracy:",mean(pred==test$y),"\n")
+cat("Contingency table:\n")
+table(pred,test$y)
+
+```
+
+As shown by the AUC, Accuracy, and Contingency table, the results of excluding NA values from the dataset has no significant difference from the original model. This is understandable from the way that we set up our problem, and just confirms that having an unknown value in any attribute is not a predictor for whether or not the subject will sign up for a bank deposit.
+
+```{r,eval=FALSE, echo = FALSE}
 #bank_data=read_delim("bank-additional/bank-additional.csv",";",col_names=TRUE,col_types = "iffccffffcdddifdddddf")
 ```
 
-```{r,eval=FALSE}
+```{r,eval=FALSE, echo = FALSE}
 #
 #c(2,5,10:14,16:20)
 #a=bank_data
@@ -387,7 +529,11 @@ Our model's AUC of .8029 is commendable, given that week exluded the "duration o
 #pca=PCAmix(as.matrix(a[,c(1,4,9:13,15:19)],a[,-c(1,4,9:13,15:19)],rename.level = TRUE))
 ```
 
-```{r,eval=FALSE}
+```{r,eval=FALSE, echo = FALSE}
 #a$y=ifelse(a$y=="yes",1,0)
 #plot(pca$scores.stand[,1],pca$scores.stand[,2],col=(a$y+3))
+```
+
+### R Appendix
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE}
 ```
