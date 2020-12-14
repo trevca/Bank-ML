@@ -21,7 +21,6 @@ library(Hmisc)
 library(GPfit)
 library(lintools)
 library(gridExtra)
-
 ```
 
 ```{r, echo = FALSE}
@@ -40,16 +39,16 @@ Our main question of interest is how the prediction variables interact to predic
 
 On top of that, we are also curious to see how much predictive power the extra data provides. That is, we would like to see how good of a model we can create without that extra data.
 
-Finally, the dataset contains lots of missing data; we would like to see how the different ways we can handle these missing data points affects the accuracy of our model.
+Finally, the dataset contains lots of missing data; we would like to see how the removal of this data before any preprocessing would affect the data.
 
 # Data Analysis  
-One key thing to note about our dataset is that along with the response variable “y,” there is also the “duration of call” variable which we would not know before we called the individual. Thus, assuming this model is going to be used to select who to call, we are choosing to remove this. This will very much hurt our model’s power, but from the perspective of the bank it is necessary to do.
 
-Given our data set is overpopulated by people who didn’t sign up for the program, using a metric of proportion correctly classified doesn’t make sense, since a model that predicts “no” for every individual will perform very well, resulting in the models we build being skewed to predicting “no”. The bank is presumably most interested in identifying the people who sign up, so we need a better metric for evaluating our model. Thus, we will use a receiver operating characteristic (ROC) curve, which plots the specificity of the model against the sensitivity. The area under the  ROC curve (AUC) provides a metric of how well the model can pick up on True-positives while not substantially increasing the number of false positives. One technique we can use to help us increase the model’s predictive power is to undersample. This will remove some of the “no” samples from our training set; in effect this increase the weighting of the "yes" samples, thus effectively increasing the penalty for misclassifying them. Doing so will increase the AUC of the model, since the model will now be more willing to report false positives in exchange for less false negatives.
+  One key thing to note about our dataset is that along with the response variable “y,” there is also the “duration of call” variable which we would not know before we called the individual. Thus, assuming this model is going to be used to select who to call, we are choosing to remove this. This will very much hurt our model’s power, but from the perspective of the bank it is necessary to do.
 
+  Given our data set is overpopulated by people who didn’t sign up for the program, using a metric of proportion correctly classified doesn’t make sense, since a model that predicts “no” for every individual will perform very well, resulting in the models we build being skewed to predicting “no”. The bank is presumably most interested in identifying the people who sign up, so we need a better metric for evaluating our model. Thus, we will use a receiver operating characteristic (ROC) curve, which plots the specificity of the model against the sensitivity. The area under the  ROC curve (AUC) provides a metric of how well the model can pick up on True-positives while not substantially increasing the number of false positives. One technique we can use to help us increase the model’s predictive power is to undersample. This will remove some of the “no” samples from our training set; in effect this increases the weighting of the "yes" samples, thus effectively increasing the penalty for misclassifying them. Doing so will increase the AUC of the model, since th
 
+### Data Processing
 ```{r, echo = FALSE}
-# Data Processing
 # Read in data with specifications
 bank_data=read_delim("bank-additional/bank-additional-full.csv",";",col_names=TRUE,col_types = "dfffffffcfddddfdddddf")
 
@@ -210,18 +209,19 @@ ggplot(bank_data,aes(age,fill=as.factor(y)))+geom_histogram()
 ```
 
 # Literature review  
-  Gradient boosting machines were first introduced in 1999 as a method of greedy function approximation; despite our usage for our project, the theory can be applied to other functional approximations methods besides trees. The methodology involves first fitting a simple function to the data, and then proceeding to successively fit models to the residual of the previous function, and additively combining the previous function with the new one. More recently, improvements have been made to the base theory, but those improvements, such as xgboost, center around the speed of calculation, in particular allowing the training to occur in parallel.  
-  
-  Hyperparameter tuning has been known to be an important part of creating effective machine learning models for decades. Initially, hyperparameter tuning was done by hand, but more recently work has been done to automate the process. Bayesian optimization is by no means a new development, but its widespread adoption by the machine learning community did not occur until the past decade. In a 2012 paper, Snoek, Larochelle, and Adams, describe a process for Bayesian optimization in Machine Learning and tout its ability to create better predictive models. The process is a way to fit a function to the models “score” (which can be defined based on the situation) over the different hyperparameters; it is an iterative process which involves fitting a functions for both the mean and variance of the function, and then choosing a new point to sample based on the means and variances of the different regions. 
 
-# Extra Credit Methods  
-  In our model, since we chose to use boosting, we introduce a hyperparameter, the shrinkage of the boosting model. While exhaustive search methods (random search, graph search) perform adequately well, we chose to use Bayesian Optimization to find an ideal combination of hyperparameters. This method gives a statistical backing to our search, and offers better performance than the exhaustive methods in cases such as ours where there is a non-negligible cost of sampling from the distribution. Sampling for us involves training a boosted tree on the data for each of the k-fold cross validation sets and evaluating the average performance on the held out data points. This takes a significant amount of time. Instead of choosing points randomly, Bayesian Optimization works by first creating a Gaussian posterior function for the mean and covariance over the points of interest. That is, for the range specified, we will estimate the mu for all of the points as well as its  From this, we then select a new point to sample by looking for a point with high expected performance from a region that has high uncertainty (variance). This can be described as balancing the exploration- looking at areas with high variance, “unknown areas”- and exploitation- sampling from high performing areas to better find the absolute peak. While there are several different methods for selecting the new point, we chose to use “Expected Improvement” metric.
+Gradient boosting machines were first introduced in 1999 as a method of greedy function approximation; despite our usage for our project, the theory can be applied to other functional approximations methods besides trees. The methodology involves first fitting a simple function to the data, and then proceeding to successively fit models to the residual of the previous function, and additively combining the previous function with the new one [1]. More recently, improvements have been made to the base theory, but those improvements, such as xgboost, center around the speed of calculation, in particular allowing the training to occur in parallel [2].
+Hyperparameter tuning has been known to be an important part of creating effective machine learning models for decades. Initially, hyperparameter tuning was done by hand, but more recently work has been done to automate the process. Bayesian optimization is by no means a new development, but its widespread adoption by the machine learning community did not occur until the past decade. In a 2012 paper, Snoek, Larochelle, and Adams, describe a process for Bayesian optimization in Machine Learning and tout its ability to create better predictive models. The process is a way to fit a function to the models “score” (which can be defined based on the situation) over the different hyperparameters; it is an iterative process which involves fitting a functions for both the mean and variance of the function, and then choosing a new point to sample based on the means and variances of the different regions [3]. 
 
-  In the demonstration below, we plotted the posterior distribution for the mu side by side with the Expected Improvement function. For each iteration, we then sample the point specified by the maximum of Expected Improvement. We then re-calculate the posterior as well as the EI. This new pot is plotted below the original plots. We continue this for 10 interactions. Initially, we chose 5 points equally spaced out. Notice how the algorithm switches over from exploration- sampling points with high variance- to exploitation- sampling from points close to the maximum.
+# Extra Credit Methods 
 
-  All of the code for the Bayesian Optimization was written by our team using only base R functions which took a significant amount of time. As a result we believe that we should be eligible to earn 15 extra credit points for this.
+In our model, since we chose to use boosting, we introduce a hyperparameter, the shrinkage of the boosting model. While exhaustive search methods (random search, graph search) perform adequately well, we chose to use Bayesian Optimization to find an ideal combination of hyperparameters. This method gives a statistical backing to our search, and offers better performance than the exhaustive methods in cases such as ours where there is a non-negligible cost of sampling from the distribution. Sampling for us involves training a boosted tree on the data for each of the k-fold cross validation sets and evaluating the average performance on the held out data points. This takes a significant amount of time. Instead of choosing points randomly, Bayesian Optimization works by first creating a Gaussian posterior function for the mean and covariance over the points of interest. That is, for the range specified, we will estimate the mu for all of the points as well as its  From this, we then select a new point to sample by looking for a point with high expected performance from a region that has high uncertainty (variance). This can be described as balancing the exploration- looking at areas with high variance, “unknown areas”- and exploitation- sampling from high performing areas to better find the absolute peak. While there are several different methods for selecting the new point, we chose to use “Expected Improvement” metric.
 
-# Our Model
+In the demonstration below, we plotted the posterior distribution for the mu side by side with the Expected Improvement function. For each iteration, we then sample the point specified by the maximum of Expected Improvement. We then re-calculate the posterior as well as the EI. This new pot is plotted below the original plots. We continue this for 10 interactions. Initially, we chose 5 points equally spaced out. Notice how the algorithm switches over from exploration- sampling points with high variance- to exploitation- sampling from points close to the maximum.
+
+All of the code for the Bayesian Optimization was written by our team using only base R functions which took a significant amount of time. As a result we believe that we should be eligible to earn 15 extra credit points for this.
+
+# Our Models
 
 ### Question 1: How can we build our model in order to best assist the bank in predicting users who are likely to sign up for a deposit.
 
@@ -378,28 +378,6 @@ table(pred,test$y)
 ```
 Our model's AUC of .8029 is commendable, given that week exluded the "duration of call variable." Had we included that variable, our model's AUC increased to .94 (not shown), whichis very good. The accuracy is only ~81%, but that is not our metric of interest. If we look at the contigency table, most of our errors resulted from False positives, the prefered error since we'd rather make an extra call than lose a customer. As the bank, there is more of a cost to not calling a customer when they would have said yes than there is to calling a customer who says no.
 
-### Question 2: Billy's Stuff
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-### Question 3: Does excluding NA and unknown values from the model at the beginning have a significant effect on the model?
-
 ```{r, echo = FALSE}
 # Question 3
 
@@ -487,14 +465,64 @@ upsample_data = function(bank_data) {
 }
 ```
 
+
+### Question 2: Is having the additional data (economic data) necessary for a well performing model?
+
+Read in the data and process we did above (using a function we create which does the same thing as what we did above).
+```{r, message = FALSE, echo = FALSE}
+bank_data = read_delim("bank-additional/bank-additional-full.csv",";",col_names=TRUE,col_types = "dfffffffcfddddfdddddf")
+bank_data = process_data(bank_data) #performs the processing as outline in part 1
+```
+
+Remove the economic predictors.
+```{r}
+bank_data=within(bank_data,rm("cons.price.idx"))
+bank_data=within(bank_data,rm("cons.conf.idx"))
+bank_data=within(bank_data,rm("euribor3m"))
+```
+
+Using our functions, we will perform Bayesian Optimization to find the optimal shrinkage parameter, and we will then perform model training on the train set. "upsample_output" is a function we created that will perform the train/test split as we did above, perform Bayesian Optimization as above, and then train a model.
+```{r,message=FALSE}
+set.seed(1)
+n = nrow(bank_data)
+upsample_output = upsample_data(bank_data)
+
+train = upsample_output[[1]]
+test = upsample_output[[2]]
+boost = upsample_output[[3]]
+```
+
+Look at the importance Variables in the model.
+```{r}
+summary(boost)
+```
+Interesting, the model now relies heavily on "pdays," "month," and "contact." Only month was in the top 3 importance of the previous model. "Job" no longer plays a very important role. "Pdays" seems to be a surprising predictor, but if we recall from preprocessing, it was heavily correlated with "poutcome," which could be the driving factor in this. Method of contact could have some merit since it's possible that a person having a telephone tells is a predictor of other stuff about the person.
+
+Use the model to make predictions and then evaluate the model.
+```{r,message=FALSE}
+pred=predict(boost,test,type="response")s
+roc=roc(test$y,pred,plot=FALSE)
+cat("AUC:",roc$auc,"\n")
+pred=ifelse(predict(boost,test,type="response")>.5,1,0)
+cat("Accuracy:",mean(pred==test$y),"\n")
+cat("Contingency table:\n")
+table(pred,test$y)
+```
+The model's predictions as only slightly worse (~.04 AUC) than with the economic variables. This is a surprising result given that the previous model relied heavily on the economic variables. If we include the duration variable it has an AUC of ~.87. So while the economic factors do help, they aren't all that necessary. 
+
+
+### Question 3: Does excluding NA and unknown values from the model at the beginning have a significant effect on the model?
+
 ```{r, message = FALSE, echo = FALSE}
 bank_data = read_delim("bank-additional/bank-additional-full.csv",";",col_names=TRUE,col_types = "dfffffffcfddddfdddddf")
 
 bank_data[bank_data=="unknown"] = NA
 bank_data = na.exclude(bank_data)
+
+
 ```
 
-Removing 'unknown' and 'NA' values reduces the data from 41188 observations to 30488 observations. While this is a large difference, it is still a significantly large number of observations and we plan to upsample the data later.
+Removing 'unknown' and 'NA' values reduces the data from 41188 observations to 30488 observations. While this is a large difference, it is still a significantly large number of observations so it does hurt the model since it will be training on less data.
 
 ```{r, message = FALSE, echo = FALSE}
 bank_data = process_data(bank_data)
@@ -512,27 +540,16 @@ pred=ifelse(predict(boost,test,type="response")>.5,1,0)
 cat("Accuracy:",mean(pred==test$y),"\n")
 cat("Contingency table:\n")
 table(pred,test$y)
-
 ```
 
 As shown by the AUC, Accuracy, and Contingency table, the results of excluding NA values from the dataset has no significant difference from the original model. This is understandable from the way that we set up our problem, and just confirms that having an unknown value in any attribute is not a predictor for whether or not the subject will sign up for a bank deposit.
 
-```{r,eval=FALSE, echo = FALSE}
-#bank_data=read_delim("bank-additional/bank-additional.csv",";",col_names=TRUE,col_types = "iffccffffcdddifdddddf")
-```
+ 
+# References  
 
-```{r,eval=FALSE, echo = FALSE}
-#
-#c(2,5,10:14,16:20)
-#a=bank_data
-#a[c(1,4,9:13,15:19)]=factor(a[c(1,4,9:13,15:19)])
-#pca=PCAmix(as.matrix(a[,c(1,4,9:13,15:19)],a[,-c(1,4,9:13,15:19)],rename.level = TRUE))
-```
-
-```{r,eval=FALSE, echo = FALSE}
-#a$y=ifelse(a$y=="yes",1,0)
-#plot(pca$scores.stand[,1],pca$scores.stand[,2],col=(a$y+3))
-```
+1. Friedman, Jerome H. “Greedy Function Approximation: A Gradient Boosting Machine.” The Annals of Statistics, vol. 29, no. 5, 2001, pp. 1189–1232. JSTOR, www.jstor.org/stable/2699986. Accessed 12 Dec. 2020.  
+2. Chen, Tianqi, and Tong He. “Xgboost: EXtreme Gradient Boosting.” 2 Sept. 2020.    
+3. Snoek, Jasper, et al. “Practical Bayesian Optimization of Machine Learning Algorithms.” 29 Aug. 2012. 
 
 ### R Appendix
 ```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE}
