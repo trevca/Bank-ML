@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+```{r,message=FALSE}
 library(tidyverse)
 library(randomForest)
 library(missForest)
@@ -30,7 +30,7 @@ set.seed(1)
 # Background  
   
   A Portuguese banking institution has provided data related to a direct marketing campaign conducted through phone calls. Through the campaign, the institution collected information about the attributes of the contacted clients such as job type, marital status, and education level. The objective of the campaign was to use the collected data to assess whether or not a client would subscribe to a bank term deposit with the banking institution. The collected data consists of two categories of information, information related to the client and information related to the clients interactions with the marketing campaign. Information related to the client refers to attributes specific to the particular client, such as their age, job, or loan status. Information related to the clients interactions with the campaign refers to information such as the last date of contact with the campaign, method of contact, and the outcome of contact with previous marketing campaigns.
-
+  
 # Statistical Questions of Interest
 
 Our main question of interest is how the prediction variables interact to predict whether or not a client will sign on to a long-term deposit. This entails building a predictive model to make educated guesses about if a particular individual will sign up for the loan. However, given that the data consists of both information about the person, we would like to see how the profile of an “average” person who signs up changes in different economic scenarios.
@@ -39,7 +39,7 @@ On top of that, we are also curious to see how much predictive power the extra d
 
 Finally, the dataset contains lots of missing data; we would like to see how the different ways we can handle these missing data points affects the accuracy of our model.
 
-#Data Analysis  
+# Data Analysis  
 One key thing to note about our dataset is that along with the response variable “y,” there is also the “duration of call” variable which we would not know before we called the individual. Thus, assuming this model is going to be used to select who to call, we are choosing to remove this. This will very much hurt our model’s power, but from the perspective of the bank it is necessary to do.
 
 Given our data set is overpopulated by people who didn’t sign up for the program, using a metric of proportion correctly classified doesn’t make sense, since a model that predicts “no” for every individual will perform very well, resulting in the models we build being skewed to predicting “no”. The bank is presumably most interested in identifying the people who sign up, so we need a better metric for evaluating our model. Thus, we will use a receiver operating characteristic (ROC) curve, which plots the specificity of the model against the sensitivity. The area under the  ROC curve (AUC) provides a metric of how well the model can pick up on True-positives while not substantially increasing the number of false positives. One technique we can use to help us increase the model’s predictive power is to undersample. This will remove some of the “no” samples from our training set; in effect this increase the weighting of the "yes" samples, thus effectively increasing the penalty for misclassifying them. Doing so will increase the AUC of the model, since the model will now be more willing to report false positives in exchange for less false negatives.
@@ -93,7 +93,7 @@ for (i in 1:12){
   names=c(names,job)
   means=c(means,mean(bank_data[which(bank_data$job==job),]$education))
 }
-boxplot(means~names,data=data.frame(names=names,means=means),las=2,xlab="")
+barplot(means~names,data=data.frame(names=names,means=means),las=2,xlab="",ylab="Mean Education Level")
 rm(job)
 rm(names)
 rm(means)
@@ -361,9 +361,8 @@ pred=ifelse(predict(boost,test,type="response")>.5,1,0)
 cat("Accuracy:",mean(pred==test$y),"\n")
 cat("Contingency table:\n")
 table(pred,test$y)
-#table(c(1,1,0),c(0,0,1))
 ```
-Our model's AUC of .7934 is commendable, given that week exluded the "duration of call variable." Had we included that variable, our model's AUC increased to .94 (not shown), whichis very good. The accuracy is only ~83%, but that is not our metric of interest. If we look at the contigency table, most of our errors resulted from False positives, the prefered error since we'd rather make an extra call than lose a customer.
+Our model's AUC of .8029 is commendable, given that week exluded the "duration of call variable." Had we included that variable, our model's AUC increased to .94 (not shown), whichis very good. The accuracy is only ~81%, but that is not our metric of interest. If we look at the contigency table, most of our errors resulted from False positives, the prefered error since we'd rather make an extra call than lose a customer. As the bank, there is more of a cost to not calling a customer when they would have said yes than there is to calling a customer who says no.
 
 #Billy's Stuff
 
