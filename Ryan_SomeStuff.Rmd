@@ -366,24 +366,145 @@ table(pred,test$y)
 Our model's AUC of .7934 is commendable, given that week exluded the "duration of call variable." Had we included that variable, our model's AUC increased to .94 (not shown), whichis very good. The accuracy is only ~83%, but that is not our metric of interest. If we look at the contigency table, most of our errors resulted from False positives, the prefered error since we'd rather make an extra call than lose a customer.
 
 #Billy's Stuff
+Read in non-additional dataset.
+```{r}
+bank_full=read_delim("bank-full.csv",";",col_names=TRUE,col_types = "dffffdfffdfddddff")
+```
 
+```{r}
+bank_full$y=ifelse(bank_full$y=="yes",1,0)
+```
 
+Education has a logical order so we can convert it to numeric.
+```{r}
+bank_full$education=ifelse(bank_full$education=="primary",1,ifelse(bank_full$education=="secondary",2,ifelse(bank_full$education== "tertiary",3,NA)))
+bank_full$education=as.numeric(bank_full$education)
+mean=mean(bank_full$education,na.rm=TRUE) 
+bank_full$education[which(is.na(bank_full$education))]=mean
+```
 
+Default has 815 occurrences of "yes", less than 2 percent of the total observations. It does not seem reasonable to include "default".
+```{r}
+length(which(bank_full$default=="yes")) 
+bank_full=within(bank_full,rm("default")) 
+```
 
+Months with low number of data points merged.
+```{r}
+#ggplot(bank_full,aes(x=month,fill=as.factor(y)))+geom_bar()
+#length(which(bank_full$month=="dec" & bank_full$y=="yes"))
+#levels(bank_full$month)
+levels(bank_full$month)[levels(bank_full$month) == "nov" |levels(bank_full$month) == "dec"] ="nov/dec"
+levels(bank_full$month)[levels(bank_full$month) == "sep" |levels(bank_full$month) == "oct"] ="sep/oct"
+levels(bank_full$month)[levels(bank_full$month) == "mar" |levels(bank_full$month) == "apr"] ="mar/apr"
+#ggplot(bank_full,aes(x=month,fill=as.factor(y)))+geom_bar()
+bank_full$month=as.factor(bank_full$month)
+```
 
+"duration" is not particularly useful as a predictor.
+```{r}
+bank_full=within(bank_full,rm("duration"))
+```
 
+Merge >=5
+```{r}
+#ggplot(bank_full,aes(x=previous,fill=as.factor(y)))+geom_bar()
+#length(which(bank_full$previous>=5))
+bank_full$previous[which(bank_full$previous>=5)]=5
+#ggplot(bank_full,aes(x=previous,fill=as.factor(y)))+geom_bar()
+```
 
+```{r}
+bank_full[bank_full=="unknown"]=NA
+```
+# Model for non-additional data
 
+Set up for boosting, split into train/test sets
+```{r}
+n=nrow(bank_full)
+ntree=1500 #Number of Trees
+tsize=5000 #size of test set
+sam=sample(n,tsize)
+test=bank_full[sam,]
+train=bank_full[-sam,]
+```
 
+Set up our intial sampled points equaly spread out, and then afterwards chooses 10 more points based on the Bayesian Optimization algorithm. Used a log scale.
+```{r,message=FALSE}
+vals <- seq(-4, 0, length.out = 5)
+scores=c()
+for (i in 1:5){
+  scores=c(scores,eval(10^(vals[i])))
+}
+for (i in 1:11){
+x_new <- seq(-4, 0, length.out = 1000)
+pred <- expected_improvement(x_new,matrix(vals),matrix(scores),l=.5,sigma_f=.5,sigma_y = .01)
+a= x_new[which.max(log10(pred))]
+score=eval(10^a)
+vals=c(vals,a)
+scores=c(scores,score)
+}
+```
 
+"Visualization" of the Gaussian Process and Expected Improvement. The left graph shows the estimate of our function and the right graph is the Expected Improvment function which we used to choose the next point to sample. The vertical line represents the shrinkage of the next point we will sample.
+```{r}
+start=4
+for (i in 1:11){
+x_new <- seq(-4, 0, length.out = 1000)
+pred <- expected_improvement(x_new,matrix(vals[1:(start+i)]),matrix(scores[1:(start+i)]),l=.5,sigma_f=.5,sigma_y = .01)
+data = data.frame(x = x_new, y = log10(pred))
+colnames(data)=c("x","y")
+line=x_new[which.max(pred)]
+assign("p2",ggplot(data,mapping=aes(x = x, y = y))+
+  geom_line(color = "red", linetype = "dashed")+
+  theme_minimal()+geom_vline(xintercept=line))+
+  ylab("Expected Improvment")+xlab("log(shrinkage)")
+x_new <- seq(-4, 0, length.out = 1000)
+pred <- posterior(matrix(x_new),as.matrix(vals[1:(start+i)]),matrix(scores[1:(start+i)]),l=1,sigma_f=1,sigma_y = .001)
+mu <- pred[[1]]
+sigma <- sqrt(diag(pred[[2]]))
+data = data.frame(x = x_new, y = mu,y_up = mu + sigma, y_low = mu - sigma)
+data2=data.frame(x=vals[1:(start+i)],y=matrix(scores[1:(start+i)]))
+colnames(data)=c("x","y","y_up","y_low")
+assign("p1",ggplot()+
+  geom_line(data=data,color = "red", linetype = "dashed",mapping=aes(x = x, y = y))+
+  geom_ribbon(data=data,fill = "skyblue", alpha = 0.5,mapping=aes(x = x, y = y,ymax = y_up, ymin = y_low)) +
+  theme_minimal()+
+  geom_point(data=data2,mapping=aes(x = x, y = y))+geom_vline(xintercept=line))+
+  ylab("AUC")+xlab("log(shrinkage)")
+grid.arrange(p1,p2,ncol=2)
+}
+```
 
+Choose shrinkage based off Gaussian Process.
+```{r}
+x_new <- seq(-4, 0, length.out = 1000)
+pred <- posterior(matrix(x_new),as.matrix(vals),matrix(scores),l=1,sigma_f=1,sigma_y = .001)
+mu <- pred[[1]]
+(shrink=10^x_new[which.max(mu)])
+```
 
+Oversample training set, and perform boosting.
+```{r}
+train=ovun.sample(y~.,train,method="under",p=.5)$data
+boost=gbm(y~.,data=train,distribution="bernoulli",n.trees=ntree, shrinkage=shrink)
+summary(boost)
+```
 
+From looking at the importance table and graph, the most important predictor in the model created using the non-additional dataset was “poutcome”, the outcome of the previous marketing campaign on each client. Logically, when we exclude economic factors as predictors, it is likely that the next best predictor of whether or not a marketing campaign will succeed on a client is whether or not a marketing campaign has succeeded on the client in the past. Second to “poutcome”, “pdays”, the number of days that have passed since the client was last contacted from a previous campaign is the next most important predictor in the non-additional dataset. Finally, the last contact month of the year or “month” is the third most important predictor in the non-additional dataset.
 
+We can observe immediately that when we use the non-additional dataset, the most important predictors are all related to the timing and/or success of the previous marketing campaign on each client. Following these three predictors, other predictors make smaller contributions and notably, the next three most important predictors, “job”, housing”, and “balance”, are likely to be the closest in relation to  economic factors without directly including economic factors in the dataset.
 
-
-
-
+Evaluate via AUC, accuracy, and table.
+```{r}
+pred=predict(boost,test,type="response")
+roc=roc(test$y,pred,plot=TRUE)
+cat("AUC:",roc$auc,"\n")
+pred=ifelse(predict(boost,test,type="response")>.5,1,0)
+cat("Accuracy:",mean(pred==test$y),"\n")
+cat("Contingency table:\n")
+table(pred,test$y)
+#table(c(1,1,0),c(0,0,1))
 
 #Trevor's Stuff
 ```{r, echo = FALSE}
