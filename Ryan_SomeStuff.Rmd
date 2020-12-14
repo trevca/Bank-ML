@@ -560,7 +560,6 @@ bank_data = read_delim("bank-additional/bank-additional-full.csv",";",col_names=
 bank_data[bank_data=="unknown"] = NA
 bank_data = na.exclude(bank_data)
 
-
 ```
 
 Removing 'unknown' and 'NA' values reduces the data from 41188 observations to 30488 observations. While this is a large difference, it is still a significantly large number of observations so it does hurt the model since it will be training on less data.
