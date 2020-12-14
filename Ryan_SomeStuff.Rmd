@@ -379,8 +379,9 @@ table(pred,test$y)
 Our model's AUC of .8029 is commendable, given that week exluded the "duration of call variable." Had we included that variable, our model's AUC increased to .94 (not shown), whichis very good. The accuracy is only ~81%, but that is not our metric of interest. If we look at the contigency table, most of our errors resulted from False positives, the prefered error since we'd rather make an extra call than lose a customer. As the bank, there is more of a cost to not calling a customer when they would have said yes than there is to calling a customer who says no.
 
 ```{r, echo = FALSE}
-# Question 3
+# Question 2
 
+# process data repeats the above data processing without printing visuals
 process_data = function(bank_data) {
   bank_data[bank_data=="unknown"]=NA
 
@@ -436,6 +437,7 @@ process_data = function(bank_data) {
 ```
 
 ```{r, echo = FALSE}
+# upsample data repeats the above code for boosting the data without printing any visuals
 upsample_data = function(bank_data) {
   ntree <<- 1500 #Number of Trees
   tsize <<- 5000 #size of test set
@@ -475,14 +477,14 @@ bank_data = process_data(bank_data) #performs the processing as outline in part 
 ```
 
 Remove the economic predictors.
-```{r}
+```{r, echo = FALSE}
 bank_data=within(bank_data,rm("cons.price.idx"))
 bank_data=within(bank_data,rm("cons.conf.idx"))
 bank_data=within(bank_data,rm("euribor3m"))
 ```
 
-Using our functions, we will perform Bayesian Optimization to find the optimal shrinkage parameter, and we will then perform model training on the train set. "upsample_output" is a function we created that will perform the train/test split as we did above, perform Bayesian Optimization as above, and then train a model.
-```{r,message=FALSE}
+Using our functions, we will perform Bayesian Optimization to find the optimal shrinkage parameter, and we will then perform model training on the train set. 
+```{r,message=FALSE, echo = FALSE}
 set.seed(1)
 n = nrow(bank_data)
 upsample_output = upsample_data(bank_data)
@@ -493,13 +495,13 @@ boost = upsample_output[[3]]
 ```
 
 Look at the importance Variables in the model.
-```{r}
+```{r, echo = FALSE}
 summary(boost)
 ```
 Interesting, the model now relies heavily on "pdays," "month," and "contact." Only month was in the top 3 importance of the previous model. "Job" no longer plays a very important role. "Pdays" seems to be a surprising predictor, but if we recall from preprocessing, it was heavily correlated with "poutcome," which could be the driving factor in this. Method of contact could have some merit since it's possible that a person having a telephone tells is a predictor of other stuff about the person.
 
 Use the model to make predictions and then evaluate the model.
-```{r,message=FALSE}
+```{r,message=FALSE, echo = FALSE}
 pred=predict(boost,test,type="response")s
 roc=roc(test$y,pred,plot=FALSE)
 cat("AUC:",roc$auc,"\n")
@@ -514,6 +516,8 @@ The model's predictions as only slightly worse (~.04 AUC) than with the economic
 ### Question 3: Does excluding NA and unknown values from the model at the beginning have a significant effect on the model?
 
 ```{r, message = FALSE, echo = FALSE}
+# Question 3
+
 bank_data = read_delim("bank-additional/bank-additional-full.csv",";",col_names=TRUE,col_types = "dfffffffcfddddfdddddf")
 
 bank_data[bank_data=="unknown"] = NA
