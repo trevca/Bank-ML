@@ -391,13 +391,10 @@ bank_full=within(bank_full,rm("default"))
 
 Months with low number of data points merged.
 ```{r}
-#ggplot(bank_full,aes(x=month,fill=as.factor(y)))+geom_bar()
-#length(which(bank_full$month=="dec" & bank_full$y=="yes"))
-#levels(bank_full$month)
+ggplot(bank_full,aes(x=month,fill=as.factor(y)))+geom_bar()
 levels(bank_full$month)[levels(bank_full$month) == "nov" |levels(bank_full$month) == "dec"] ="nov/dec"
 levels(bank_full$month)[levels(bank_full$month) == "sep" |levels(bank_full$month) == "oct"] ="sep/oct"
 levels(bank_full$month)[levels(bank_full$month) == "mar" |levels(bank_full$month) == "apr"] ="mar/apr"
-#ggplot(bank_full,aes(x=month,fill=as.factor(y)))+geom_bar()
 bank_full$month=as.factor(bank_full$month)
 ```
 
@@ -406,12 +403,11 @@ bank_full$month=as.factor(bank_full$month)
 bank_full=within(bank_full,rm("duration"))
 ```
 
-Merge >=5
+Very little observations of previous >=5 so we can merge >=5.
 ```{r}
-#ggplot(bank_full,aes(x=previous,fill=as.factor(y)))+geom_bar()
-#length(which(bank_full$previous>=5))
+ggplot(bank_full,aes(x=previous,fill=as.factor(y)))+geom_bar()
+length(which(bank_full$previous>=5))
 bank_full$previous[which(bank_full$previous>=5)]=5
-#ggplot(bank_full,aes(x=previous,fill=as.factor(y)))+geom_bar()
 ```
 
 ```{r}
