@@ -501,6 +501,7 @@ cat("Accuracy:",mean(pred==test$y),"\n")
 cat("Contingency table:\n")
 table(pred,test$y)
 #table(c(1,1,0),c(0,0,1))
+```
 
 Using the non-additional dataset our model has an AUC of 0.7001 when evaluated on our testing set. If we elect to include duration as a predictor (not shown) we can increase the AUC to 0.8740 when evaluated on our testing set. The AUC for our model created using the non-additional data (0.7001) is less than the AUC for our model created using the additional data (0.8145) when evaluated on our testing set. The updated data is necessary to improve our model and we are unable to be just as accurate with the non-additional dataset.
 
