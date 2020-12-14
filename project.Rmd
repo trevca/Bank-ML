@@ -1,6 +1,6 @@
 ---
 title: "STA141_Project"
-author: "Trevor Carpenter, Ryan Buchner, Bobby Chow"
+author: "Ryan Buchner, Trevor Carpenter, Bobby Chow"
 date: "12/1/2020"
 output: html_document
 ---
@@ -36,8 +36,10 @@ pred = ifelse(pred == "yes", 1, 0)
 test$y = ifelse(test$y=="yes", 1, 0)
 mean(pred == test$y)
 table(pred, test$y)
-rf[["confusion"]]
+#rf[["confusion"]]
 ```
+
+
 
 
 

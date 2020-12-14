@@ -226,8 +226,46 @@ ggplot(bank_data,aes(age,fill=as.factor(y)))+geom_histogram()
 
 ### Question 1: How can we build our model in order to best assist the bank in predicting users who are likely to sign up for a deposit.
 
+The most simplistic model we could create for this problem would be a simple random forest model that best predicts based on our training and testing data.
 ```{r, echo = FALSE}
 # Question 1
+rf_bank_data = na.exclude(bank_data)
+rf_bank_data$y = factor(rf_bank_data$y)
+n=nrow(rf_bank_data)
+ntree=1500 #Number of Trees
+tsize=5000 #size of test set
+sam=sample(n,tsize)
+test=rf_bank_data[sam,]
+train=rf_bank_data[-sam,]
+
+rf = randomForest(y ~ ., train)
+pred = predict(rf, test)
+pred = ifelse(pred == "yes", 1, 0)
+test$y = ifelse(test$y=="yes", 1, 0)
+cat("Accuracy:", mean(pred == test$y), "\n")
+table(pred, test$y)
+```
+
+However, clearly the initial struggle with a simplistic random forest is that there are not enough y-values with output "yes" to get our model to converge on anything but only outputting "no" for every instance.
+
+We also performed a simple logistic regression, with a similar result:
+
+```{r, echo = FALSE, warning = FALSE}
+lr_model <- glm(y ~ ., data = train, family = binomial)
+prob = predict(lr_model, test)
+pred = ifelse(prob > 0.5, 1, 0)
+cat("Accuracy:", mean(pred == test$y), "\n")
+table(pred, test$y)
+```
+
+Here at least the model was able to predict a couple of "yes" values, however they were incorrectly calculated once again since the test set only contained "no"s. 
+
+The overall weakness with these models is not only a result of not having enough samples, but also with their optimizaiton. Both random forest and logistic regression optimize for accuracy in prediction. While that is important, in the context of this problem we would rather have false positives than false negatives, meaning we would rather assume someone would sign up when they wouldn't and waste a call than assume they wouldn't sign up when they would have if they had just been contacted. 
+
+As such, we utilized a more intensive boosting model that utilizes the aformentioned shrinkage parameter in order to make it such that the model can more accurately converge to predicting "yes" values.
+
+```{r, echo = FALSE}
+set.seed(1)
 n=nrow(bank_data)
 ntree=1500 #Number of Trees
 tsize=5000 #size of test set
@@ -235,7 +273,6 @@ sam=sample(n,tsize)
 test=bank_data[sam,]
 train=bank_data[-sam,]
 ```
-
 
 ```{r, echo = FALSE}
 # This evaluation function implement cross validation manually.
