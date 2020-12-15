@@ -35,7 +35,7 @@ set.seed(1)
   
 # Statistical Questions of Interest
 
-Our main question of interest is how the prediction variables interact to predict whether or not a client will sign on to a long-term deposit. This entails building a predictive model to make educated guesses about if a particular individual will sign up for the loan. However, given that the data consists of both information about the person, we would like to see how the profile of an “average” person who signs up changes in different economic scenarios.
+Our main question of interest is how the prediction variables interact to predict whether or not a client will sign on to a long-term deposit. This entails building a predictive model to make educated guesses about if a particular individual will sign up for the loan. We specifically want to make sure that this prediction is based on the goal of the company to have more people sign up for a loan. This means that we will favor having more false positives than false negatives in our model prediction.
 
 On top of that, we are also curious to see how much predictive power the extra data provides. That is, we would like to see how good of a model we can create without that extra data.
 
@@ -45,7 +45,7 @@ Finally, the dataset contains lots of missing data; we would like to see how the
 
   One key thing to note about our dataset is that along with the response variable “y,” there is also the “duration of call” variable which we would not know before we called the individual. Thus, assuming this model is going to be used to select who to call, we are choosing to remove this. This will very much hurt our model’s power, but from the perspective of the bank it is necessary to do.
 
-  Given our data set is overpopulated by people who didn’t sign up for the program, using a metric of proportion correctly classified doesn’t make sense, since a model that predicts “no” for every individual will perform very well, resulting in the models we build being skewed to predicting “no”. The bank is presumably most interested in identifying the people who sign up, so we need a better metric for evaluating our model. Thus, we will use a receiver operating characteristic (ROC) curve, which plots the specificity of the model against the sensitivity. The area under the  ROC curve (AUC) provides a metric of how well the model can pick up on True-positives while not substantially increasing the number of false positives. One technique we can use to help us increase the model’s predictive power is to undersample. This will remove some of the “no” samples from our training set; in effect this increases the weighting of the "yes" samples, thus effectively increasing the penalty for misclassifying them. Doing so will increase the AUC of the model, since th
+  Given our data set is overpopulated by people who didn’t sign up for the program, using a metric of proportion correctly classified doesn’t make sense, since a model that predicts “no” for every individual will perform very well, resulting in the models we build being skewed to predicting “no”. The bank is presumably most interested in identifying the people who sign up, so we need a better metric for evaluating our model. Thus, we will use a receiver operating characteristic (ROC) curve, which plots the specificity of the model against the sensitivity. The area under the  ROC curve (AUC) provides a metric of how well the model can pick up on True-positives while not substantially increasing the number of false positives. One technique we can use to help us increase the model’s predictive power is to undersample. This will remove some of the “no” samples from our training set; in effect this increases the weighting of the "yes" samples, thus effectively increasing the penalty for misclassifying them. Doing so will increase the AUC of the model, since there will be more positives overall.
 
 ### Data Processing
 ```{r, echo = FALSE}
@@ -223,7 +223,7 @@ All of the code for the Bayesian Optimization was written by our team using only
 
 # Our Models
 
-### Question 1: How can we build our model in order to best assist the bank in predicting users who are likely to sign up for a deposit.
+### Question 1: How can we build our model in order to best assist the bank in predicting users who are likely to sign up for a deposit?
 
 The most simplistic model we could create for this problem would be a simple random forest model that best predicts based on our training and testing data.
 ```{r, echo = FALSE}
@@ -400,8 +400,8 @@ train=ovun.sample(y~.,train,method="under",p=.5)$data
 boost=gbm(y~.,data=train,distribution="bernoulli",n.trees=ntree, shrinkage=shrink)
 summary(boost)
 ```
-From looking at the important table and graph, the most important predictor was the persons "job," which makes sense logically since wealthier people will likely have more money to invest. It is interesting though that this was such an important predictor though given that there did not appear to be a strong correlation with sucess in the boxplot of jobs. Euribor3m is a close second. As we saw above, it should be noted that this variable was strongly correlaated with the "employment variation rate" and "number of employees." All of these are metrics of the economy and are likely also correlated with the interest rates the bank is offering. "Month" was a distant but clear third; this is of interest as nothing immediately comes to mind for why month would have a strong effect. One possibility is that given that the data was gathered over the short span of a year and a half, outside events could have had an effect on some months but there was not enough time for those outside unrelated events to get averaged out. Following month, no other variables make larger contributions, although they do have small effects.
 
+From looking at the important table and graph, the most important predictor was the "euribor3m" feature. As we saw above, it should be noted that this variable was strongly correlaated with the "employment variation rate" and "number of employees." All of these are metrics of the economy and are likely also correlated with the interest rates the bank is offering. Second, we have the person's "job," which makes sense logically since wealthier people will likely have more money to invest. It is interesting though that this was such an important predictor though given that there did not appear to be a strong correlation with sucess in the boxplot of jobs. "Month" was third; this is of interest as nothing immediately comes to mind for why month would have a strong effect. One possibility is that given that the data was gathered over the short span of a year and a half, outside events could have had an effect on some months but there was not enough time for those outside unrelated events to get averaged out. Following month, no other variables make larger contributions, although they do have small effects.
 
 Evaluating via AUC, accuracy, and table gives us the following.
 ```{r, echo = FALSE}
@@ -416,7 +416,6 @@ table(pred,test$y)
 Our model's AUC of .8029 is commendable, given that week exluded the "duration of call variable." Had we included that variable, our model's AUC increased to .94 (not shown), whichis very good. The accuracy is only ~81%, but that is not our metric of interest. If we look at the contigency table, most of our errors resulted from False positives, the prefered error since we'd rather make an extra call than lose a customer. As the bank, there is more of a cost to not calling a customer when they would have said yes than there is to calling a customer who says no.
 
 ```{r, echo = FALSE}
-# Question 2
 
 # process data repeats the above data processing without printing visuals
 process_data = function(bank_data) {
@@ -507,20 +506,21 @@ upsample_data = function(bank_data) {
 
 ### Question 2: Is having the additional data (economic data) necessary for a well performing model?
 
-Read in the data and process we did above (using a function we create which does the same thing as what we did above).
+First, we read in the data and process we did above (using a function we create which does the same thing as what we did above). We do not use the economic variables, since those are not present in the not-full dataset.
 ```{r, message = FALSE, echo = FALSE}
+
+# Question 2
+
 bank_data = read_delim("bank-additional/bank-additional-full.csv",";",col_names=TRUE,col_types = "dfffffffcfddddfdddddf")
 bank_data = process_data(bank_data) #performs the processing as outline in part 1
 ```
-
-Remove the economic predictors.
 ```{r, echo = FALSE}
 bank_data=within(bank_data,rm("cons.price.idx"))
 bank_data=within(bank_data,rm("cons.conf.idx"))
 bank_data=within(bank_data,rm("euribor3m"))
 ```
 
-Using our functions, we will perform Bayesian Optimization to find the optimal shrinkage parameter, and we will then perform model training on the train set. 
+As above, we will perform Bayesian Optimization to find the optimal shrinkage parameter, and we will then perform model training on the train set. 
 ```{r,message=FALSE, echo = FALSE}
 set.seed(1)
 n = nrow(bank_data)
@@ -531,15 +531,15 @@ test = upsample_output[[2]]
 boost = upsample_output[[3]]
 ```
 
-Look at the importance Variables in the model.
+The importance Variables in the model are shown below.
 ```{r, echo = FALSE}
 summary(boost)
 ```
-Interesting, the model now relies heavily on "pdays," "month," and "contact." Only month was in the top 3 importance of the previous model. "Job" no longer plays a very important role. "Pdays" seems to be a surprising predictor, but if we recall from preprocessing, it was heavily correlated with "poutcome," which could be the driving factor in this. Method of contact could have some merit since it's possible that a person having a telephone tells is a predictor of other stuff about the person.
+Interestingly, the model now relies heavily on "pdays," "month," and "contact." Only month was in the top 3 importance of the previous model. "Job" no longer plays a very important role. "Pdays" seems to be a surprising predictor, but if we recall from preprocessing, it was heavily correlated with "poutcome," which could be the driving factor in this. Method of contact could have some merit since it's possible that a person having a telephone  is a predictor of other information about the person.
 
-Use the model to make predictions and then evaluate the model.
+We then use the model to make predictions and then evaluate the model.
 ```{r,message=FALSE, echo = FALSE}
-pred=predict(boost,test,type="response")s
+pred=predict(boost,test,type="response")
 roc=roc(test$y,pred,plot=FALSE)
 cat("AUC:",roc$auc,"\n")
 pred=ifelse(predict(boost,test,type="response")>.5,1,0)
@@ -547,10 +547,9 @@ cat("Accuracy:",mean(pred==test$y),"\n")
 cat("Contingency table:\n")
 table(pred,test$y)
 ```
-The model's predictions as only slightly worse (~.04 AUC) than with the economic variables. This is a surprising result given that the previous model relied heavily on the economic variables. If we include the duration variable it has an AUC of ~.87. So while the economic factors do help, they aren't all that necessary. 
+The model's predictions as only slightly worse (~.04 AUC) than with the economic variables. We expect that similar to the original model, this AUC value would increase drastically if we included the duration feature. This is a surprising result given that the previous model relied heavily on the economic variables. So while the economic factors do help, they aren't all that necessary or significant.
 
-
-### Question 3: Does excluding NA and unknown values from the model at the beginning have a significant effect on the model?
+### Question 3: Does excluding NA and unknown values from the data at the beginning have a significant effect on the model?
 
 ```{r, message = FALSE, echo = FALSE}
 # Question 3
@@ -562,7 +561,7 @@ bank_data = na.exclude(bank_data)
 
 ```
 
-Removing 'unknown' and 'NA' values reduces the data from 41188 observations to 30488 observations. While this is a large difference, it is still a significantly large number of observations so it does hurt the model since it will be training on less data.
+Removing 'unknown' and 'NA' values reduces the data from 41188 observations to 30488 observations. While this is a large difference, it is still a significantly large number of observations so it doesn't hurt the model since it will be training on less data.
 
 ```{r, message = FALSE, echo = FALSE}
 bank_data = process_data(bank_data)
@@ -582,7 +581,7 @@ cat("Contingency table:\n")
 table(pred,test$y)
 ```
 
-As shown by the AUC, Accuracy, and Contingency table, the results of excluding NA values from the dataset has no significant difference from the original model. This is understandable from the way that we set up our problem, and just confirms that having an unknown value in any attribute is not a predictor for whether or not the subject will sign up for a bank deposit.
+We expect that similar to the original model, this AUC value would increase drastically if we included the duration feature. As shown by the AUC, Accuracy, and Contingency table, the results of excluding NA values from the dataset has no significant difference from the original model. This is understandable from the way that we set up our problem, and just confirms that having an unknown value in any attribute is not a predictor for whether or not the subject will sign up for a bank deposit.
 
  
 # References  
