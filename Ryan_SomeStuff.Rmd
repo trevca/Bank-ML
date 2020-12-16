@@ -413,7 +413,8 @@ cat("Accuracy:",mean(pred==test$y),"\n")
 cat("Contingency table:\n")
 table(pred,test$y)
 ```
-Our model's AUC of .8029 is commendable, given that week exluded the "duration of call variable." Had we included that variable, our model's AUC increased to .94 (not shown), whichis very good. The accuracy is only ~81%, but that is not our metric of interest. If we look at the contigency table, most of our errors resulted from False positives, the prefered error since we'd rather make an extra call than lose a customer. As the bank, there is more of a cost to not calling a customer when they would have said yes than there is to calling a customer who says no.
+
+### Question 3: Does excluding NA and unknown values from the model at the beginning have a significant effect on the model?
 
 ```{r, echo = FALSE}
 
@@ -589,6 +590,7 @@ We expect that similar to the original model, this AUC value would increase dras
 1. Friedman, Jerome H. “Greedy Function Approximation: A Gradient Boosting Machine.” The Annals of Statistics, vol. 29, no. 5, 2001, pp. 1189–1232. JSTOR, www.jstor.org/stable/2699986. Accessed 12 Dec. 2020.  
 2. Chen, Tianqi, and Tong He. “Xgboost: EXtreme Gradient Boosting.” 2 Sept. 2020.    
 3. Snoek, Jasper, et al. “Practical Bayesian Optimization of Machine Learning Algorithms.” 29 Aug. 2012. 
+
 
 ### R Appendix
 ```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE}
